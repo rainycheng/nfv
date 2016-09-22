@@ -3,12 +3,16 @@
 from __future__ import print_function
 import threading,Queue,time,os,sys
 import libvirt
+import numpy as np
 from xml.etree import ElementTree
+from numpy import array
+from sklearn.cluster import KMeans
 
-class Monitor(threading.Thread):
+class NFVMonitor(threading.Thread):
    """performance monitoring class"""
    def __init__(self,t_name,domID,queue):
       self.queue = queue
+      self.__running = True
 
       conn = libvirt.open('qemu:///system')
       if conn == None:
@@ -20,6 +24,9 @@ class Monitor(threading.Thread):
          exit(1)
 
       threading.Thread.__init__(self, name=t_name)
+   
+   def terminate(self):
+      self._running = False
 
    def getCPUstats(self):
       return self.dom.getCPUStats(True)
@@ -36,7 +43,7 @@ class Monitor(threading.Thread):
       return self.dom.interfaceStats(iface)
 
    def startMonitor(self):
-      while True:
+      while True and self.__running:
          cpu_stats = self.getCPUstats()
          mem_stats = self.getMEMstats()
          rd_req, rd_bytes, wr_req, wr_bytes, err = self.getDISKstats()
@@ -56,12 +63,32 @@ class Monitor(threading.Thread):
          time.sleep(2) 
 
    def run(self):
-	self.startMonitor()
+      self.startMonitor()
 
+class NFVCluster(threading.Thread):
+   """transform VNF observations into a sequence of cluster labels"""
+   def __init__(self,t_name):
+      self.__running = True
+      threading.Thread.__init__(self, name=t_name)
+   
+   def terminate(self):
+      self.__running = False
 
+   def startCluster():
+      features = np.loadtxt('features.txt')
+      print (features)
+      labels = open('/home/stack/labels.txt','w')
+      labels.close()
+   
+   def run(self):
+      self.startCluster()
 
-features = open('/home/stack/features.txt','a')
+features = open('/home/stack/features.txt','w')
 q = Queue.Queue()
-nfv_monitor = Monitor('nfv_monitor',33,q)
+nfv_monitor = NFVMonitor('nfv_monitor',33,q)
 nfv_monitor.start()
+time.sleep(20)
+nfv_monitor.terminate()
 nfv_monitor.join()
+features.close()
+
