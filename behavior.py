@@ -6,7 +6,12 @@ import libvirt
 import numpy as np
 from xml.etree import ElementTree
 from numpy import array
+# apt-get install python-sklearn
 from sklearn.cluster import KMeans
+# $pip install -U --user hmmlearn
+#https://github.com/hmmlearn/hmmlearn
+from hmmlearn import hmm
+
 
 class NFVMonitor(threading.Thread):
    """performance monitoring class"""
@@ -160,6 +165,9 @@ class NFVHMM(threading.Thread):
       # HMM get an observation from the queue at a time, 
       # Monitor put an observation into the queue every 1s
       self.queue = queue
+      
+      self.hmm = hmm.GaussianHMM(n_components=2, covariance_type="full")
+
       threading.Thread.__init__(self, name=t_name)
    
    def terminate(self):
