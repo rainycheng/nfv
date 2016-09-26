@@ -15,13 +15,13 @@ from hmmlearn import hmm
 
 class NFVMonitor(threading.Thread):
    """performance monitoring class"""
-   def __init__(self,t_name,domID,queue):
-      self.queue = queue
+   def __init__(self,t_name,domID,vec_queue):
+      self.queue = vec_queue
       #self._running state controls the termination of this thread
       self._running = True
       
       #open features.txt file, this file is used to record VNF performance monitoring features
-      self.features = open('/home/stack/features.txt','w')
+      self.features = open('/home/stack/features.txt','a')
       
       #connect to libvirt
       conn = libvirt.open('qemu:///system')
@@ -34,14 +34,14 @@ class NFVMonitor(threading.Thread):
       if self.dom == None:
          print('Failed to find the domain '+domName, file=sys.stderr)
          exit(1)
-      
+
       #initialize this thread
       threading.Thread.__init__(self, name=t_name)
    
    #terminate this thread, close the opened 'features.txt' file in __init__
    def terminate(self):
       self._running = False
-      self.features.close()
+      #self.features.close()
    
    #get CPU performance events
    def getCPUstats(self):
@@ -63,34 +63,54 @@ class NFVMonitor(threading.Thread):
 
    #record perfomrance monitoring events every 1s
    def startMonitor(self):
+      cpu_prev = self.getCPUstats()
+      mem_prev = self.getMEMstats()
+      disk_prev = self.getDISKstats()
+      net_prev = self.getNETstats()
+      
       while self._running:
+         time.sleep(1)
          #collect CPU,memory,block,network performance stats 
          cpu_stats = self.getCPUstats()
          mem_stats = self.getMEMstats()
-         rd_req, rd_bytes, wr_req, wr_bytes, err = self.getDISKstats()
+         disk_stats = self.getDISKstats()
          net_stats = self.getNETstats()
          
-         #concatenate CPU stats
-         stats_vector = str(cpu_stats[0]['cpu_time']) + ' ' + str(cpu_stats[0]['system_time']) \
-         + ' ' + str(cpu_stats[0]['user_time'])
-         #concatenate memory stats
-         for name in mem_stats:
-            stats_vector = stats_vector + ' ' + str(mem_stats[name])
-         #concatenate block stats
-         stats_vector = stats_vector + ' ' + str(rd_req) + ' ' + str(rd_bytes) + ' ' \
-                       + str(wr_req) + ' ' + str(wr_bytes) + ' ' + str(err)
-         #concatenate network stats
+         VEC = str(mem_stats['actual']) + ' ' + str(mem_stats['actual'] - mem_stats['unused'])
+         VEC = VEC + ' ' + str(cpu_stats[0]['cpu_time'])
+         VEC = VEC + ' ' + str(cpu_stats[0]['cpu_time']-cpu_prev[0]['cpu_time'])
+         for i in range(0,4):
+            VEC = VEC + ' ' + str(disk_stats[i]) + ' ' + str(disk_stats[i] - disk_prev[i])
          for i in range(0,8):
-	    stats_vector = stats_vector + ' ' + str(net_stats[i])
-         stats_vector = stats_vector + '\n'
+            VEC = VEC + ' ' + str(net_stats[i]) + ' ' + str(net_stats[i] - net_prev[i])  
+         VEC = VEC + '\n'
+        #concatenate CPU stats
+        # stats_vector = str(cpu_stats[0]['cpu_time'])
+        # stats_vector = str(cpu_stats[0]['cpu_time']) + ' ' + str(cpu_stats[0]['system_time']) \
+        # + ' ' + str(cpu_stats[0]['user_time'])
+        # #concatenate memory stats
+        # for name in mem_stats:
+        #    stats_vector = stats_vector + ' ' + str(mem_stats[name])
+        # #concatenate block stats
+        # stats_vector = stats_vector + ' ' + str(rd_req) + ' ' + str(rd_bytes) + ' ' \
+        #               + str(wr_req) + ' ' + str(wr_bytes) #+ ' ' + str(err)
+        # #concatenate network stats
+        # for i in range(0,8):
+	#    stats_vector = stats_vector + ' ' + str(net_stats[i])
+        # stats_vector = stats_vector + '\n'
          
          #NFVmonitor put monitoring events into a shared queue
-         self.queue.put(stats_vector)
+         self.queue.put(VEC)
          
          #write stats_vector into features.txt file, do not foget to flush into disk
-         self.features.write(stats_vector)
+         self.features.write(VEC)
          self.features.flush()
-         time.sleep(1) 
+        
+         cpu_prev = cpu_stats
+         mem_prev = mem_stats
+         disk_prev = disk_stats
+         net_prev = net_stats 
+      self.features.close()
 
    def run(self):
       self.startMonitor()
@@ -98,8 +118,10 @@ class NFVMonitor(threading.Thread):
 
 class NFVCluster(threading.Thread):
    """transform VNF observations into a sequence of cluster labels"""
-   def __init__(self,t_name):
+   def __init__(self, t_name, vec_queue, obv_queue):
       self._running = True
+      self.vec_queue = vec_queue
+      self.obv_queue = obv_queue
       #estimators are used to save different KMeans algos (# of clusters). Example:
       #http://scikit-learn.org/stable/auto_examples/cluster/plot_cluster_iris.html
       self.estimators = {'k_means_10': KMeans(n_clusters=3)}
@@ -139,33 +161,50 @@ class NFVCluster(threading.Thread):
       cluster_centers.close()
 
    #predict the cluster label of each sample observation 
+#   def labelCluster(self):
+#      #sample features are stored in 'samples.txt' file 
+#      samples = np.loadtxt('features.txt')
+#      #predicted labels are stored in 'predicts.txt' file
+#      predicts = open('/home/stack/predicts.txt','w')
+#      
+#      #using the est.predict(X) method, str() readable formats 
+#      #Predict the closest cluster each sample in X belongs to.
+#      for pred in self.est.predict(samples):
+#            predicts.write(str(pred)+'\n')
    def predictCluster(self):
-      #sample features are stored in 'samples.txt' file 
-      samples = np.loadtxt('samples.txt')
-      #predicted labels are stored in 'predicts.txt' file
-      predicts = open('/home/stack/predicts.txt','w')
-      
-      #using the est.predict(X) method, str() readable formats 
-      #Predict the closest cluster each sample in X belongs to.
-      for pred in self.est.predict(samples):
-            predicts.write(str(pred)+'\n')
+      try:
+         sample_vector = self.vec_queue.get(1,3)
+         sampleX = [int(i) for i in sample_vector.split(' ')]
+         #print(test)
+         sample_label = self.est.predict(sampleX)
+         print(sample_label)
+         self.obv_queue.put(sample_label) 
+      except Exception, e:
+         print (e)
+         self.terminate()
 
    def run(self):
       self.startCluster()
       #startCluster() must run before predictCluster
       #the trained parameters are stored in self.est after running est.fit(X)
-      self.predictCluster()
-
+  #    print('cluster finished\n')
+      while self._running:
+  #       print('OK\n')
+         self.predictCluster()
+         time.sleep(1)
 
 class NFVHMM(threading.Thread):
    """Hidden Markov Models"""
-   def __init__(self, t_name, queue):
+   def __init__(self, t_name, obv_queue):
       self._running = True
       # the shared queue is used, monitor is the producer, HMM is the consumer
       # HMM get an observation from the queue at a time, 
       # Monitor put an observation into the queue every 1s
-      self.queue = queue
-      
+      self.queue = obv_queue
+      self.threshold = -100
+      #self.X represents the observation sequences
+      self.X = self.queue.get(1,3) 
+      print (self.X)
       self.hmm = hmm.GaussianHMM(n_components=2, covariance_type="full")
 
       threading.Thread.__init__(self, name=t_name)
@@ -180,6 +219,7 @@ class NFVHMM(threading.Thread):
          #block=1 means block if necessary until an item is available, timeout=3 means block
          #at most 3 sesconds and raises the Empty exception if no item was available within 3s
          Observation = self.queue.get(1,3)
+         self.X = self.X + Observation
       except Exception, e:
          print (e)
          self.terminate()
@@ -187,11 +227,24 @@ class NFVHMM(threading.Thread):
       print (Observation)
       #indicate that a formerly enqueued task is complete
       self.queue.task_done()
-      time.sleep(1)
+   
+   def trainHMM(self):
+      obvX = np.loadtxt('labels.txt')
+      print (obvX)
+      self.hmm.fit(obvX)
+
+   def predictHMM(self):
+      self.getObservation()
+      print (self.X)
+      return self.hmm.score(self.X) 
 
    def startHMM(self):
+      self.trainHMM()
       while self._running:
-         self.getObservation()
+         Q = self.predictHMM()
+         if (Q < self.threshold):
+	    print ("Abnormal NFV. Q = " + str(Q) + "\n")
+         time.sleep(1)   
 
    def run(self):
       self.startHMM()   
@@ -205,26 +258,36 @@ class NFVThrottle(threading.Thread):
    def terminate(self):
       self._running = False
 
-   def startThrottle(self):
+   #def startThrottle(self):
    
-   def run(self):
-      self.startThrottle()
+   #def run(self):
+    #  self.startThrottle()
 
 
 if __name__ == "__main__":
-   q = Queue.Queue()
-   nfv_monitor = NFVMonitor('nfv_monitor',33,q)
-   nfv_hmm = NFVHMM('nfv_hmm',q)
+   # the shared queue q is used by NFVMonitor and NFVCluster, each item in the q is the performance vector
+   Q_vec = Queue.Queue()
+   # the shared queue qc is used by NFVCluster and NFVHMM, each item in the qc is the observation
+   Q_obv = Queue.Queue()
+ 
+   nfv_monitor = NFVMonitor('nfv_monitor', 33, Q_vec)
    nfv_monitor.start()
+   time.sleep(5)
+   nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
+   nfv_cluster.start()
+   time.sleep(10)
+
+   nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
    nfv_hmm.start()
    time.sleep(10)
-   nfv_monitor.terminate()
-   nfv_hmm.terminate()
    
-   nfv_cluster = NFVCluster('nfv_cluster')
-   nfv_cluster.start()
-   #nfv_monitor.join()
+   nfv_monitor.terminate()
+   nfv_cluster.terminate()
+   nfv_hmm.terminate()
+
+   #nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
+   #nfv_cluster.start()
+   nfv_monitor.join()
    nfv_cluster.join()
    nfv_hmm.join()
-   #features.close()
-
+   #nfv_monitor.join()
