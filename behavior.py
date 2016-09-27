@@ -1,7 +1,7 @@
 #! /usr/bin/env python2.7
 #encoding:utf-8
 from __future__ import print_function
-import threading,Queue,time,os,sys
+import threading,Queue,time,os,sys,subprocess
 import libvirt
 import numpy as np
 from xml.etree import ElementTree
@@ -256,18 +256,63 @@ class NFVHMM(threading.Thread):
 
 class NFVThrottle(threading.Thread):
    """VM resource throttle"""
-   def __init__(self, t_name):
+   def __init__(self, t_name, inst_name):
       self._running = True
+      self.inst_name = inst_name
       threading.Thread.__init__(self, name=t_name)
 
    def terminate(self):
       self._running = False
 
-   #def startThrottle(self):
-   
-   #def run(self):
-    #  self.startThrottle()
+   def throttleCPU(self, quota):
+      cgdir = '/sys/fs/cgroup/cpu/machine/'
+      COMMAND = 'echo ' + quota + ' > ' + cgdir + self.inst_name + '.libvirt-qemu/cpu.cfs_quota_us'      
+      p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      p.wait()
 
+   def throttleMEM(self, quota):
+      cgdir = '/sys/fs/cgroup/memory/machine/'
+      COMMAND = 'echo ' + quota + ' > ' + cgdir + self.inst_name + '.libvirt-qemu/memory.limit_in_bytes'
+      p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      p.wait()
+
+   def throttleDISK(self, quota, op):
+      cgdir = '/sys/fs/cgroup/blkio/machine/'
+      if (op == 'read_iops'):
+         COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \\
+                 + '.libvirt-qemu/blkio.throttle.read_iops_device'
+      else if (op == 'write_iops'):
+         COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \\
+                 + '.libvirt-qemu/blkio.throttle.write_iops_device'
+      p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      p.wait()
+
+   def throttleNET(self, quota, op):
+      dev = 'tap0'
+      rate = 'rate=1000'
+      COMMAND = 'ovs-vsctl set interface ' + dev + 'ingress_policing_'+ rate
+      p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+      p.wait()  
+
+   def startThrottle(self):
+      print ("OK!\n")  
+ 
+   def run(self):
+      self.startThrottle()
+
+class NFVRegulator(threading.Thread):
+   def __init__(self, t_name):
+      self._running = True
+      threading.Thread.__init__(self, name=t_name)
+   
+   def terminate(self):
+      self._running = False
+   
+   def startRegulate(self):
+      print ("OK!\n")
+
+   def run(self):
+      self.startRegulate()
 
 if __name__ == "__main__":
    # the shared queue q is used by NFVMonitor and NFVCluster, each item in the q is the performance vector
