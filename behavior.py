@@ -63,6 +63,7 @@ class NFVMonitor(threading.Thread):
 
    #record perfomrance monitoring events every 1s
    def startMonitor(self):
+      #save previous stats to calculate rate features per second
       cpu_prev = self.getCPUstats()
       mem_prev = self.getMEMstats()
       disk_prev = self.getDISKstats()
@@ -75,29 +76,19 @@ class NFVMonitor(threading.Thread):
          mem_stats = self.getMEMstats()
          disk_stats = self.getDISKstats()
          net_stats = self.getNETstats()
-         
+         #concatenate VNF features into VEC vector, features are ordered according to report 3
+         #memory features 
          VEC = str(mem_stats['actual']) + ' ' + str(mem_stats['actual'] - mem_stats['unused'])
+         #CPU features
          VEC = VEC + ' ' + str(cpu_stats[0]['cpu_time'])
          VEC = VEC + ' ' + str(cpu_stats[0]['cpu_time']-cpu_prev[0]['cpu_time'])
+         #disk features
          for i in range(0,4):
             VEC = VEC + ' ' + str(disk_stats[i]) + ' ' + str(disk_stats[i] - disk_prev[i])
+         #net features
          for i in range(0,8):
             VEC = VEC + ' ' + str(net_stats[i]) + ' ' + str(net_stats[i] - net_prev[i])  
          VEC = VEC + '\n'
-        #concatenate CPU stats
-        # stats_vector = str(cpu_stats[0]['cpu_time'])
-        # stats_vector = str(cpu_stats[0]['cpu_time']) + ' ' + str(cpu_stats[0]['system_time']) \
-        # + ' ' + str(cpu_stats[0]['user_time'])
-        # #concatenate memory stats
-        # for name in mem_stats:
-        #    stats_vector = stats_vector + ' ' + str(mem_stats[name])
-        # #concatenate block stats
-        # stats_vector = stats_vector + ' ' + str(rd_req) + ' ' + str(rd_bytes) + ' ' \
-        #               + str(wr_req) + ' ' + str(wr_bytes) #+ ' ' + str(err)
-        # #concatenate network stats
-        # for i in range(0,8):
-	#    stats_vector = stats_vector + ' ' + str(net_stats[i])
-        # stats_vector = stats_vector + '\n'
          
          #NFVmonitor put monitoring events into a shared queue
          self.queue.put(VEC)
@@ -105,7 +96,7 @@ class NFVMonitor(threading.Thread):
          #write stats_vector into features.txt file, do not foget to flush into disk
          self.features.write(VEC)
          self.features.flush()
-        
+         #save previous stats to calculate rate features per second 
          cpu_prev = cpu_stats
          mem_prev = mem_stats
          disk_prev = disk_stats
@@ -120,6 +111,8 @@ class NFVCluster(threading.Thread):
    """transform VNF observations into a sequence of cluster labels"""
    def __init__(self, t_name, vec_queue, obv_queue):
       self._running = True
+      #vec_queue is used to store VNF features vectors 
+      #obv_queue is used to store observation cluster labels
       self.vec_queue = vec_queue
       self.obv_queue = obv_queue
       #estimators are used to save different KMeans algos (# of clusters). Example:
@@ -160,7 +153,6 @@ class NFVCluster(threading.Thread):
       labels.close()
       cluster_centers.close()
 
-   #predict the cluster label of each sample observation 
 #   def labelCluster(self):
 #      #sample features are stored in 'samples.txt' file 
 #      samples = np.loadtxt('features.txt')
@@ -173,22 +165,25 @@ class NFVCluster(threading.Thread):
 #            predicts.write(str(pred)+'\n')
    def predictCluster(self):
       try:
+         #get a feature vector sample from vec_queue, return type string
          sample_vector = self.vec_queue.get(1,3)
          self.vec_queue.task_done()
       except Exception, e:
          print (e)
          self.terminate()
+      #split sample_vector into type float array
       sampleX = np.array([float(i) for i in sample_vector.split(' ')])
+      #the sample has only one feature, use X.reshape(1,-1) to adjust dimension
+      #predict the cluster label of sampleX
       sample_label = self.est.predict(sampleX.reshape(1,-1))
+      #put sample_label into obv_queue
       self.obv_queue.put(sample_label) 
 
    def run(self):
       self.startCluster()
       #startCluster() must run before predictCluster
       #the trained parameters are stored in self.est after running est.fit(X)
-  #    print('cluster finished\n')
       while self._running:
-  #       print('OK\n')
          self.predictCluster()
          time.sleep(1)
 
@@ -198,13 +193,14 @@ class NFVHMM(threading.Thread):
       self._running = True
       # the shared queue is used, monitor is the producer, HMM is the consumer
       # HMM get an observation from the queue at a time, 
-      # Monitor put an observation into the queue every 1s
+      # Cluster put an observation label into the obv_queue every 1s
       self.queue = obv_queue
+      # the threshold used to determine abnormal VNF behavior
       self.threshold = -10
-      #self.X represents the observation sequences
-#      self.X = self.queue.get(1,3) 
+      #self.X represents the observation sequences, type list
       self.X = []
-#      print (self.X)
+
+      #use GaussianHMM, n_components is the number of hidden states
       self.hmm = hmm.GaussianHMM(n_components=5, covariance_type="full")
 
       threading.Thread.__init__(self, name=t_name)
@@ -224,26 +220,33 @@ class NFVHMM(threading.Thread):
       except Exception, e:
          print (e)
          self.terminate()
+      #self.X is a list, add the new Observation label into self.X list tail
       self.X.append(Observation[0])
+      #keep the list length of self.X fixed to a given number
+      #delete the old items in the head of self.X list 
       if (len(self.X) > 20):
          del self.X[0]
    
    def trainHMM(self):
+      #the trained VNF feature stats are stored in 'features.txt'
+      #the corresponding VNF cluster labels are stored in 'labels.txt'  
       obvX = np.loadtxt('labels.txt')
-      #print (obvX.reshape(-1,1))
-      #print (obvX)
+      #the obvX has only one feature, using X.reshape(-1,1) to format dimension
+      #hmm.fit is used to train the GaussianHMM model
       self.hmm.fit(obvX.reshape(-1,1))
 
    def predictHMM(self):
       self.getObservation()
-      print (self.X)
+#      print (self.X)
       sampleX = np.array(self.X)
+      #hmm.score returns the Log likelihood of sampleX under the model
       return self.hmm.score(sampleX.reshape(-1,1)) 
 
    def startHMM(self):
       self.trainHMM()
       while self._running:
          Q = self.predictHMM()
+         #if the Log likelihood Q is below a given threshold, report 'Abnormal'
          if (Q < self.threshold):
 	    print ("Abnormal NFV. Q = " + str(Q) + "\n")
          time.sleep(1)   
