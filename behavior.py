@@ -124,7 +124,7 @@ class NFVCluster(threading.Thread):
       self.obv_queue = obv_queue
       #estimators are used to save different KMeans algos (# of clusters). Example:
       #http://scikit-learn.org/stable/auto_examples/cluster/plot_cluster_iris.html
-      self.estimators = {'k_means_10': KMeans(n_clusters=3)}
+      self.estimators = {'k_means_10': KMeans(n_clusters=10)}
                         # 'k_means_20': KMeans(n_clusters=20),
                         # 'k_means_30': KMeans(n_clusters=30)}
 
@@ -174,14 +174,13 @@ class NFVCluster(threading.Thread):
    def predictCluster(self):
       try:
          sample_vector = self.vec_queue.get(1,3)
-         sampleX = [int(i) for i in sample_vector.split(' ')]
-         #print(test)
-         sample_label = self.est.predict(sampleX)
-         print(sample_label)
-         self.obv_queue.put(sample_label) 
+         self.vec_queue.task_done()
       except Exception, e:
          print (e)
          self.terminate()
+      sampleX = np.array([float(i) for i in sample_vector.split(' ')])
+      sample_label = self.est.predict(sampleX.reshape(1,-1))
+      self.obv_queue.put(sample_label) 
 
    def run(self):
       self.startCluster()
@@ -201,11 +200,12 @@ class NFVHMM(threading.Thread):
       # HMM get an observation from the queue at a time, 
       # Monitor put an observation into the queue every 1s
       self.queue = obv_queue
-      self.threshold = -100
+      self.threshold = -10
       #self.X represents the observation sequences
-      self.X = self.queue.get(1,3) 
-      print (self.X)
-      self.hmm = hmm.GaussianHMM(n_components=2, covariance_type="full")
+#      self.X = self.queue.get(1,3) 
+      self.X = []
+#      print (self.X)
+      self.hmm = hmm.GaussianHMM(n_components=5, covariance_type="full")
 
       threading.Thread.__init__(self, name=t_name)
    
@@ -219,24 +219,26 @@ class NFVHMM(threading.Thread):
          #block=1 means block if necessary until an item is available, timeout=3 means block
          #at most 3 sesconds and raises the Empty exception if no item was available within 3s
          Observation = self.queue.get(1,3)
-         self.X = self.X + Observation
+         #indicate that a formerly enqueued task is complete
+         self.queue.task_done()         
       except Exception, e:
          print (e)
          self.terminate()
-
-      print (Observation)
-      #indicate that a formerly enqueued task is complete
-      self.queue.task_done()
+      self.X.append(Observation[0])
+      if (len(self.X) > 20):
+         del self.X[0]
    
    def trainHMM(self):
       obvX = np.loadtxt('labels.txt')
-      print (obvX)
-      self.hmm.fit(obvX)
+      #print (obvX.reshape(-1,1))
+      #print (obvX)
+      self.hmm.fit(obvX.reshape(-1,1))
 
    def predictHMM(self):
       self.getObservation()
       print (self.X)
-      return self.hmm.score(self.X) 
+      sampleX = np.array(self.X)
+      return self.hmm.score(sampleX.reshape(-1,1)) 
 
    def startHMM(self):
       self.trainHMM()
@@ -279,7 +281,7 @@ if __name__ == "__main__":
 
    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
    nfv_hmm.start()
-   time.sleep(10)
+   time.sleep(50)
    
    nfv_monitor.terminate()
    nfv_cluster.terminate()
