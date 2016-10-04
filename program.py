@@ -96,6 +96,11 @@ class DBOperator():
 class MalwareDB():
     def __init__(self):
         
+    def createGlobalTB():
+
+    def createLocalTB():
+   
+    def 
 
 class NFVSignature():
     def __init__(self, dir_prog):
@@ -137,8 +142,6 @@ class ApproximateMatch():
         Similar_set = []
         Asym_similarity = 0
         for i,str_func in self.db_op.select(table_x):
-            #W_weights.append(self.calcuWeight(str_func, self.str_sig))
-            #E_errors.append(int(len(str_func)*(1-self.threshold_func)))
             W_weight = len(str_func)/(x_len+0.0)
             E_error  = int(len(str_func)*(1-self.threshold_func))
 
