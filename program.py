@@ -70,7 +70,7 @@ class DBOperator():
                         Column('sig_fun', String))
 
     	self.metadata.create_all(self.engine)
-    	conn = self.engine.connect()
+    	self.conn = self.engine.connect()
     	return local_t
     
     def insert(self, table_t, dict_u):
@@ -95,12 +95,16 @@ class DBOperator():
 
 class MalwareDB():
     def __init__(self):
-        
-    def createGlobalTB():
+        self.engine = create_engine('sqlite:///foo.db')
+        self.metadata = MetaData()
+        self.metadata.bind = self.engine
+        self.metadata.reflect()
+        self.conn = self.engine.connect()
 
-    def createLocalTB():
+    def createGlobalTB(self):
+
+    def createLocalTB(self):
    
-    def 
 
 class NFVSignature():
     def __init__(self, dir_prog):
@@ -166,7 +170,7 @@ class ApproximateMatch():
             if max_sim < temp_sim:
                max_sim = temp_sim
 
-        if max_sim >= self.threshold_prog
+        if max_sim >= self.threshold_prog:
            print "The tested VNF is malicious!"
   
 if __name__ == "__main__":
