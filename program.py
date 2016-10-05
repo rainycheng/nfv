@@ -57,21 +57,20 @@ class DBOperator():
     def __init__(self):
 	self.engine = create_engine('sqlite:///foo.db')
 	self.metadata = MetaData()
-	self.global_t = Table('global_t', self.metadata,
-                              Column('id', Integer, primary_key=True),
-                              Column('digest', String),
-                              Column('signature', String))
-        self.metadata.create_all(self.engine)
+        self.metadata.bind = self.engine
+        self.metadata.reflect()
         self.conn = self.engine.connect()
 
-    def createLocalTB(self, l_name):
-    	local_t = Table(l_name, self.metadata,
-                        Column('id', Integer, primary_key=True),
-                        Column('sig_fun', String))
-
-    	self.metadata.create_all(self.engine)
-    	self.conn = self.engine.connect()
-    	return local_t
+#    def createLocalTB(self, l_name):
+#    	local_t = Table(l_name, self.metadata,
+#                        Column('id', Integer, primary_key=True),
+#                        Column('sig_fun', String))
+#
+#    	self.metadata.create_all(self.engine)
+#    	self.conn = self.engine.connect()
+#    	return local_t
+    def reflectTB(self, tb_name):
+        return Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
     
     def insert(self, table_t, dict_u):
     	i = table_t.insert()
@@ -100,11 +99,38 @@ class MalwareDB():
         self.metadata.bind = self.engine
         self.metadata.reflect()
         self.conn = self.engine.connect()
+        self.db_op = DBOperator()
 
-    def createGlobalTB(self):
+    def createGlobalTB(self): 
+	if 'global_t' not in self.metadata.tables:
+            global_t = Table('global_t', self.metadata,
+                              Column('id', Integer, primary_key=True),
+                              Column('digest', String),
+                              Column('signature', String)) 
+            self.metadata.create_all(self.engine)
+        else:
+            global_t = Table('global_t', self.metadata, autoload=True, autoload_with=self.engine)
+        
+        u = dict(digest='di', signature='123')
+        self.db_op.insert(global_t, u)
 
-    def createLocalTB(self):
-   
+#    def reflectGlobalTB(self):
+#        global_t = Table('global_t', self.metadata, autoload=True, autoload_with=self.engine)
+#        print global_t.columns
+#        u = dict(digest='di', signature='123')
+#        self.db_op.insert(global_t, u)
+#        
+#        print self.conn.execute(select([global_t])).fetchall()
+  
+    def createLocalTB(self, tb_name):
+        if tb_name not in self.metadata.tables: 
+    	    local_t = Table(tb_name, self.metadata,
+                            Column('id', Integer, primary_key=True),
+                            Column('sig_fun', String))
+    	    self.metadata.create_all(self.engine)
+        else:
+            local_t = Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
+        
 
 class NFVSignature():
     def __init__(self, dir_prog):
@@ -174,28 +200,33 @@ class ApproximateMatch():
            print "The tested VNF is malicious!"
   
 if __name__ == "__main__":
-    db_op = DBOperator()
-    lt1 = db_op.createLocalTB('local_t')
-    u = dict(digest='di',signature='123')
-    u1 = dict(sig_fun='12345')
-    db_op.insert(lt1, u1)
-    db_op.insert(db_op.global_t, u)
-    r = db_op.select(lt1)
-    #X =[]
-    #for i,j in r:
-    #   X.append(j)
-    #print X
-    r = db_op.exactSelect(db_op.global_t, '12')
-    print r
-    db_op.count(lt1)
+    DBOperator()
+    mal_db = MalwareDB()
+    mal_db.createGlobalTB()
+    mal_db.reflectGlobalTB()
 
-    sig_ob = NFVSignature('samples/x86/flow.elf')
-    print sig_ob.getcfg()
-    print max(1,2)
-
-    root='cat'
-    bk_tree=BkTree(root)
-    words=['bat','cat','bats']
-    bk_tree.build(words)
-    print bk_tree.query('car',1)
+#    db_op = DBOperator()
+#    lt1 = db_op.createLocalTB('local_t')
+#    u = dict(digest='di',signature='123')
+#    u1 = dict(sig_fun='12345')
+#    db_op.insert(lt1, u1)
+#    db_op.insert(db_op.global_t, u)
+#    r = db_op.select(lt1)
+#    #X =[]
+#    #for i,j in r:
+#    #   X.append(j)
+#    #print X
+#    r = db_op.exactSelect(db_op.global_t, '12')
+#    print r
+#    db_op.count(lt1)
+#
+#    sig_ob = NFVSignature('samples/x86/flow.elf')
+#    print sig_ob.getcfg()
+#    print max(1,2)
+#
+#    root='cat'
+#    bk_tree=BkTree(root)
+#    words=['bat','cat','bats']
+#    bk_tree.build(words)
+#    print bk_tree.query('car',1)
      
