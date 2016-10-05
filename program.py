@@ -1,6 +1,7 @@
 #!/usr/bin/env python2.7
 #encoding:utf-8
 import os,sys
+import numpy as np
 #pip install editdistance
 #https://pypi.python.org/pypi/editdistance
 #amoco construct cfg, install from source code
@@ -30,7 +31,7 @@ class BkTree():
     def insert(self, node, word):
         "Inserts a word in the tree."
         d = editdistance.eval(word, node[0])
-        print node[1]
+#        print node[1]
         if d not in node[1]:
             node[1][d] = (word, {})
         else:
@@ -63,7 +64,12 @@ class DBOperator():
 
     def reflectTB(self, tb_name):
         return Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
-    
+   
+    def drop(self, table_t):
+        i = table_t.drop()
+        r = self.conn.execute(i)
+        return r
+     
     def insert(self, table_t, dict_u):
     	i = table_t.insert()
         r = self.conn.execute(i, **dict_u)
@@ -110,11 +116,26 @@ class MalwareDB():
                             Column('sig_fun', String))
     	    self.metadata.create_all(self.engine)
         else:
-            print tb_name + '.db is already created!'
-            #local_t = Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
+            #print tb_name + '.db is already created!'
+            local_t = Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
         return local_t
-        
+
+    def storeLocalSignatures(self, dir_prog):
+        if dir_prog not in self.metadata.tables:
+            local_t = self.createLocalTB(dir_prog)
+            nfv_sig = NFVSignature(dir_prog)
+            str_sig, vnf_functions = nfv_sig.getcfg()
+            for func in vnf_functions:
+                u = dict(sig_fun = cfg.signature(func.cfg))
+                self.db_op.insert(local_t, u)
+        else:
+            print dir_prog + ' is already in the malware Database!'
+            local_t = Table(dir_prog, self.metadata, autoload=True, autoload_with=self.engine)
+        return local_t
+     
     def storeSignatures(self, dir_prog):
+        self.createGlobalTB()
+
         nfv_sig = NFVSignature(dir_prog)
         str_sig, vnf_functions = nfv_sig.getcfg()
         
@@ -130,6 +151,13 @@ class MalwareDB():
                 self.db_op.insert(local_t, u)
         else:
             print dir_prog + ' already in the database!'
+
+    def buildVNFDB(self):
+        f_mal = open('malware.txt','r')
+        dir_vnf = '../amoco/tests/samples/'
+
+        for line in f_mal.readlines():
+            self.storeSignatures(dir_vnf + line.strip())
  
 class NFVSignature():
     def __init__(self, dir_prog):
@@ -146,22 +174,27 @@ class NFVSignature():
         return str_sig, z.functions() 
 
 class ApproximateMatch():
-    def __init__(self, db_op):
+    def __init__(self):
         self.threshold_func = 0.9
         self.threshold_prog = 0.6
-        self.db_op = db_op
+        self.db_op = DBOperator()
+        self.mal_db = MalwareDB()
 
     def calcuWeight(self, str_func, str_sig):
         return len(str_func)/(len(str_sig)+0.0)
     
     def calcuSimilarity(self, str_x, str_y):
-        return 1 - (editdistance.eval(str_x, str_y)/(max(len(str_x),len(str_y))+0.0))
+        ed = editdistance.eval(str_x, str_y)
+        print 'editdistance (' + str_x + ',' + str_y +'):' + str(ed)
+        return 1 - (ed/(max(len(str_x),len(str_y))+0.0))
     
     def calcuAsymmetricSim(self, table_x, table_y):
-        bk_tree = BkTree(root_y)
         str_funcs = []
         for i,str_func in self.db_op.select(table_y):
             str_funcs.append(str_func)
+       # print str_funcs
+        bk_tree = BkTree(str_funcs[0])
+        del str_funcs[0]
         bk_tree.build(str_funcs)
 
         x_len = 0
@@ -172,62 +205,61 @@ class ApproximateMatch():
         Asym_similarity = 0
         for i,str_func in self.db_op.select(table_x):
             W_weight = len(str_func)/(x_len+0.0)
-            E_error  = int(len(str_func)*(1-self.threshold_func))
-
+            E_error  = int(len(str_func)*(1-self.threshold_func)) + 1
+#            print 'W_weight:' + str(W_weight)
+            print 'E_error:' + str(E_error)
             for str_node in bk_tree.query(str_func, E_error):                     
                 if str_node not in Similar_set:
-                    similarity_rate = self.calcuSimilarity(str_func, str_node)  
-                    if similarity_rate >= self.threshold:
+                    similarity_rate = self.calcuSimilarity(str_func, str_node) 
+                    print 'func similarity_rate:' + str(similarity_rate) 
+                    if similarity_rate >= self.threshold_func:
                         Similar_set.append(str_node)
                         Asym_similarity = Asym_similarity + W_weight * similarity_rate
                         break
         return Asym_similarity
     
     def calcuProgramSim(self, dir_prog):
-        test_tb = self.db_op.createLocalTB(dir_prog)
         Program_sims = []
         max_sim = 0
-        for i in range(0, self.db_op.count(db_op.global_t)):
-            s_x = self.calcuAsymmetricSim(test_tb, local_tb[i])
-            s_y = self.calcuAsymmetricSim(local_tb[i], test_tb)
+        f_mal = open('malware.txt','r')
+        dir_vnf = '../amoco/tests/samples/'
+
+        test_tb = self.mal_db.storeLocalSignatures(dir_prog)
+#        print test_tb
+        print self.db_op.select(test_tb)
+        for line in f_mal.readlines():
+            print "Comparing with " + line.strip()
+            local_tb = self.db_op.reflectTB(dir_vnf + line.strip())
+            print self.db_op.select(local_tb)
+            s_x = self.calcuAsymmetricSim(test_tb, local_tb)
+            print 'Asym(test, local): ' + str(s_x)
+            s_y = self.calcuAsymmetricSim(local_tb, test_tb)
+            print 'Asym(local,test): ' + str(s_y)
             temp_sim = s_x * s_y
+            print 'Similarity: ' + str(temp_sim)
             Program_sims.append(temp_sim)       
             if max_sim < temp_sim:
                max_sim = temp_sim
 
+#        self.db_op.drop(test_tb)
+ 
+        print 'Similarity Ratio between ' + dir_prog + ' and VNFs in the MalwareDB: '
+        print max_sim
+
         if max_sim >= self.threshold_prog:
            print "The tested VNF is malicious!"
+        else:
+           print "The tested VNF is secure at present!"
+
+
   
 if __name__ == "__main__":
-    DBOperator()
     mal_db = MalwareDB()
-    mal_db.createGlobalTB()
-    mal_db.storeSignatures('amoco/tests/samples/x86/flow.elf')
+    mal_db.buildVNFDB()
 
-#    mal_db.reflectGlobalTB()
+    am =  ApproximateMatch()
+    
+    am.calcuProgramSim('../amoco/tests/samples/x86/cpflow.elf')
 
-#    db_op = DBOperator()
-#    lt1 = db_op.createLocalTB('local_t')
-#    u = dict(digest='di',signature='123')
-#    u1 = dict(sig_fun='12345')
-#    db_op.insert(lt1, u1)
-#    db_op.insert(db_op.global_t, u)
-#    r = db_op.select(lt1)
-#    #X =[]
-#    #for i,j in r:
-#    #   X.append(j)
-#    #print X
-#    r = db_op.exactSelect(db_op.global_t, '12')
-#    print r
-#    db_op.count(lt1)
-#
-#    sig_ob = NFVSignature('samples/x86/flow.elf')
-#    print sig_ob.getcfg()
-#    print max(1,2)
-#
-#    root='cat'
-#    bk_tree=BkTree(root)
-#    words=['bat','cat','bats']
-#    bk_tree.build(words)
-#    print bk_tree.query('car',1)
+
      
