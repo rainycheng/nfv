@@ -55,20 +55,12 @@ class BkTree():
 
 class DBOperator():
     def __init__(self):
-	self.engine = create_engine('sqlite:///foo.db')
+	self.engine = create_engine('sqlite:///malwareVNF.db')
 	self.metadata = MetaData()
         self.metadata.bind = self.engine
         self.metadata.reflect()
         self.conn = self.engine.connect()
 
-#    def createLocalTB(self, l_name):
-#    	local_t = Table(l_name, self.metadata,
-#                        Column('id', Integer, primary_key=True),
-#                        Column('sig_fun', String))
-#
-#    	self.metadata.create_all(self.engine)
-#    	self.conn = self.engine.connect()
-#    	return local_t
     def reflectTB(self, tb_name):
         return Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
     
@@ -94,7 +86,7 @@ class DBOperator():
 
 class MalwareDB():
     def __init__(self):
-        self.engine = create_engine('sqlite:///foo.db')
+        self.engine = create_engine('sqlite:///malwareVNF.db')
         self.metadata = MetaData()
         self.metadata.bind = self.engine
         self.metadata.reflect()
@@ -103,25 +95,14 @@ class MalwareDB():
 
     def createGlobalTB(self): 
 	if 'global_t' not in self.metadata.tables:
-            global_t = Table('global_t', self.metadata,
+            self.global_t = Table('global_t', self.metadata,
                               Column('id', Integer, primary_key=True),
                               Column('digest', String),
                               Column('signature', String)) 
             self.metadata.create_all(self.engine)
         else:
-            global_t = Table('global_t', self.metadata, autoload=True, autoload_with=self.engine)
-        
-        u = dict(digest='di', signature='123')
-        self.db_op.insert(global_t, u)
+            self.global_t = Table('global_t', self.metadata, autoload=True, autoload_with=self.engine)    
 
-#    def reflectGlobalTB(self):
-#        global_t = Table('global_t', self.metadata, autoload=True, autoload_with=self.engine)
-#        print global_t.columns
-#        u = dict(digest='di', signature='123')
-#        self.db_op.insert(global_t, u)
-#        
-#        print self.conn.execute(select([global_t])).fetchall()
-  
     def createLocalTB(self, tb_name):
         if tb_name not in self.metadata.tables: 
     	    local_t = Table(tb_name, self.metadata,
@@ -129,9 +110,27 @@ class MalwareDB():
                             Column('sig_fun', String))
     	    self.metadata.create_all(self.engine)
         else:
-            local_t = Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
+            print tb_name + '.db is already created!'
+            #local_t = Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
+        return local_t
         
-
+    def storeSignatures(self, dir_prog):
+        nfv_sig = NFVSignature(dir_prog)
+        str_sig, vnf_functions = nfv_sig.getcfg()
+        
+        str_hash = hashlib.sha512(str_sig).hexdigest()
+        hash_set = self.db_op.select(self.global_t.c.digest)
+        if (str_hash,) not in hash_set:
+            u = dict(digest = str_hash, signature = str_sig)
+            self.db_op.insert(self.global_t,u)
+        
+            local_t = self.createLocalTB(dir_prog)
+            for func in vnf_functions:
+                u = dict(sig_fun = cfg.signature(func.cfg))
+                self.db_op.insert(local_t, u)
+        else:
+            print dir_prog + ' already in the database!'
+ 
 class NFVSignature():
     def __init__(self, dir_prog):
         self.prog = amoco.system.loader.load_program(dir_prog)
@@ -143,7 +142,7 @@ class NFVSignature():
         for func in z.functions():
             #print cfg.signature(fun.cfg)
             str_sig = str_sig + cfg.signature(func.cfg)
-        print hashlib.sha512(str_sig).hexdigest()     
+        #print hashlib.sha512(str_sig).hexdigest()     
         return str_sig, z.functions() 
 
 class ApproximateMatch():
@@ -203,7 +202,9 @@ if __name__ == "__main__":
     DBOperator()
     mal_db = MalwareDB()
     mal_db.createGlobalTB()
-    mal_db.reflectGlobalTB()
+    mal_db.storeSignatures('amoco/tests/samples/x86/flow.elf')
+
+#    mal_db.reflectGlobalTB()
 
 #    db_op = DBOperator()
 #    lt1 = db_op.createLocalTB('local_t')
