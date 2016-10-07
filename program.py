@@ -138,9 +138,9 @@ class MalwareDB():
         else:
             self.global_t = Table('global_t', self.metadata, autoload=True, autoload_with=self.engine)    
 
-    #create local table named tb_name
-    #tb_name stores malware basic functions signatures sig_fun
-    #each malware has a seprate local table to store sig_fun
+    # create local table named tb_name
+    # tb_name stores malware basic functions signatures sig_fun
+    # each malware has a seprate local table to store sig_fun
     def createLocalTB(self, tb_name):
         # if previously seen the same malware, we do not create the table, 
         # just return the table object (in the else statement).
@@ -155,51 +155,78 @@ class MalwareDB():
             local_t = Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
         return local_t
 
-    # 
+    # dir_prog is the directory name of the VNF program to be analysed
+    # store VNF program basic functions signature into the local_t table 
     def storeLocalSignatures(self, dir_prog):
         if dir_prog not in self.metadata.tables:
             local_t = self.createLocalTB(dir_prog)
+            # instantiate a NFVSignature object
             nfv_sig = NFVSignature(dir_prog)
+            # get the control flow graph
             str_sig, vnf_functions = nfv_sig.getcfg()
+            # the returned vnf_functions is a list of basic functions of cfg
             for func in vnf_functions:
+                # use cfg to construct corresponding signatures
                 u = dict(sig_fun = cfg.signature(func.cfg))
+                # store function signature into local_t table
                 self.db_op.insert(local_t, u)
         else:
+            # if the VNF named dir_program exists already, we do not need to construct signatures again 
+            # we just get the local_t table object
             print dir_prog + ' is already in the malware Database!'
             local_t = Table(dir_prog, self.metadata, autoload=True, autoload_with=self.engine)
         return local_t
-     
+    
+    # construct the global table, and the local tables
+    # the global table stores signatures and hash digests of VNF malware program
+    # each local table stores function signatures of each VNF malware program
     def storeSignatures(self, dir_prog):
         self.createGlobalTB()
-
+        #analyse VNF program ELF binary named dir_prog
+        #get the control flow graphs of basic functions
         nfv_sig = NFVSignature(dir_prog)
         str_sig, vnf_functions = nfv_sig.getcfg()
         
+        #calculate the hash digest of the VNF malware binary signature
         str_hash = hashlib.sha512(str_sig).hexdigest()
+       
+         #determine whether the analysed binary is in the global_t table
         hash_set = self.db_op.select(self.global_t.c.digest)
         if (str_hash,) not in hash_set:
+            # insert the digest and signature into global_t table
             u = dict(digest = str_hash, signature = str_sig)
             self.db_op.insert(self.global_t,u)
-        
+            
+            # create local_t table for the binary named dir_prog
             local_t = self.createLocalTB(dir_prog)
+            # store function signatures into local_t table
             for func in vnf_functions:
                 u = dict(sig_fun = cfg.signature(func.cfg))
                 self.db_op.insert(local_t, u)
         else:
             print dir_prog + ' already in the database!'
-
+ 
+    # build the whole VNF malware signature databases
+    # the VNF malware binary names are stored in the malware.txt file
     def buildVNFDB(self):
         f_mal = open('malware.txt','r')
         dir_vnf = '../amoco/tests/samples/'
 
         for line in f_mal.readlines():
             self.storeSignatures(dir_vnf + line.strip())
- 
+
+# NFVSignature generates binary signatures based on control flow graph
 class NFVSignature():
+    '''class NFVSignature generates signatures of malware binary'''
     def __init__(self, dir_prog):
+        # we use the open source amoco library to get control flow graph(cfg)
         self.prog = amoco.system.loader.load_program(dir_prog)
         
     def getcfg(self):
+        # lsweep is the linear sweep based analysis
+        # we can chosse other analysis methods, such as
+        # fforward is the fast forward based analysis
+        # see: https://github.com/bdcht/amoco/blob/release/amoco/main.py
         z = amoco.lsweep(self.prog)
         z.getcfg()
         str_sig = ''
@@ -209,41 +236,65 @@ class NFVSignature():
         #print hashlib.sha512(str_sig).hexdigest()     
         return str_sig, z.functions() 
 
+# approximate match VNF program binaries
 class ApproximateMatch():
+    ''' class ApproximateMatch involves the algorithm proposed in Report 2'''
     def __init__(self):
+        # the function similarity threshold
         self.threshold_func = 0.9
+        # the program similarity threshold
         self.threshold_prog = 0.6
+        # instantiate the DBOperator object to operate on databases
         self.db_op = DBOperator()
+        # instantiate the MalwareDB object to create signattures
         self.mal_db = MalwareDB()
 
+    # calculate the weight of function in the program
+    # str_func is the signature of the function
+    # str_sig is the signature of the program
     def calcuWeight(self, str_func, str_sig):
         return len(str_func)/(len(str_sig)+0.0)
     
+    # calculate the similarity of str_x and str_y
+    # using edit distance
     def calcuSimilarity(self, str_x, str_y):
         ed = editdistance.eval(str_x, str_y)
         print 'editdistance (' + str_x + ',' + str_y +'):' + str(ed)
+        #the meaning of this equation is described in Report 2
         return 1 - (ed/(max(len(str_x),len(str_y))+0.0))
     
+    # calculate Asymmetric Similarity of program x and y
+    # table_x/table_y stores the function signatures of program x and y respectively
     def calcuAsymmetricSim(self, table_x, table_y):
         str_funcs = []
+        # construct the function signatures string list
         for i,str_func in self.db_op.select(table_y):
             str_funcs.append(str_func)
-       # print str_funcs
+        # build the BK-Tree using signatures string list
+        # the first signature string is the root
         bk_tree = BkTree(str_funcs[0])
+        # delete the root string to build the rest of BK-Tree
         del str_funcs[0]
         bk_tree.build(str_funcs)
 
+        # calculate the length of the program x's signature 
         x_len = 0
         for i,str_func in self.db_op.select(table_x):
             x_len = x_len + len(str_func)
 
+        # Similar_set stores the previous seen function signatures deemed as similar
         Similar_set = []
+        # Asymmetric similarity
         Asym_similarity = 0
+
         for i,str_func in self.db_op.select(table_x):
+            # function weight
             W_weight = len(str_func)/(x_len+0.0)
+            # allowable errors (allowable editdistances)
             E_error  = int(len(str_func)*(1-self.threshold_func)) + 1
 #            print 'W_weight:' + str(W_weight)
             print 'E_error:' + str(E_error)
+            
             for str_node in bk_tree.query(str_func, E_error):                     
                 if str_node not in Similar_set:
                     similarity_rate = self.calcuSimilarity(str_func, str_node) 
@@ -254,12 +305,18 @@ class ApproximateMatch():
                         break
         return Asym_similarity
     
+    # calculate program similarity of dir_prog with malwares stored in database
     def calcuProgramSim(self, dir_prog):
+        #Program_sims stores the program similarity of each analysed malware
         Program_sims = []
+        #find out the maximum program similarity 
         max_sim = 0
+        
+        #the name of malware binaries are stored in malware.txt file
         f_mal = open('malware.txt','r')
         dir_vnf = '../amoco/tests/samples/'
-
+        
+        #the tested VNF program binary function signatures are stored in test_tb table
         test_tb = self.mal_db.storeLocalSignatures(dir_prog)
 #        print test_tb
         print self.db_op.select(test_tb)
