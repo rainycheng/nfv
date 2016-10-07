@@ -281,28 +281,50 @@ class ApproximateMatch():
         x_len = 0
         for i,str_func in self.db_op.select(table_x):
             x_len = x_len + len(str_func)
-
+#        print self.db_op.select(table_x)
         # Similar_set stores the previous seen function signatures deemed as similar
-        Similar_set = []
+#        Similar_set = []
         # Asymmetric similarity
         Asym_similarity = 0
-
+       
+        # maintain a counter for each different function signatures
+        # used to record the matched signatures in table_y 
+        sig_dict = {}
+        for i, str_func in self.db_op.select(table_y):
+            if str_func not in sig_dict:
+                sig_dict[str_func] = 1
+            else:
+                sig_dict[str_func] = sig_dict[str_func] + 1
+        
+        # calculate each function signature similarity for table_x
         for i,str_func in self.db_op.select(table_x):
             # function weight
             W_weight = len(str_func)/(x_len+0.0)
             # allowable errors (allowable editdistances)
             E_error  = int(len(str_func)*(1-self.threshold_func)) + 1
-#            print 'W_weight:' + str(W_weight)
-            print 'E_error:' + str(E_error)
-            
-            for str_node in bk_tree.query(str_func, E_error):                     
-                if str_node not in Similar_set:
-                    similarity_rate = self.calcuSimilarity(str_func, str_node) 
-                    print 'func similarity_rate:' + str(similarity_rate) 
-                    if similarity_rate >= self.threshold_func:
-                        Similar_set.append(str_node)
-                        Asym_similarity = Asym_similarity + W_weight * similarity_rate
-                        break
+
+            # match_flag is used to determmine str_func has matched a function
+            # signature in table_y
+            match_flag = 0            
+            # a greedy algorithm to find matched signature from 0 to E_error allowable editdistances
+            for j in range(0, E_error):
+                # a function signature has been matched, break to the next function signature match
+                if match_flag == 1:
+                   break
+                # use bk-tree to query j allowable editdistances signatures in table_y
+                for str_node in bk_tree.query(str_func, j):                     
+                    # the signature str_node is still available, not matched
+                    if sig_dict[str_node] > 0:
+                        similarity_rate = self.calcuSimilarity(str_func, str_node) 
+#                        print 'func similarity_rate:' + str(similarity_rate) 
+                        if similarity_rate >= self.threshold_func:
+#                            Similar_set.append(str_node)
+                            # decrease the number of signature str_node
+                            sig_dict[str_node] = sig_dict[str_node] - 1
+                            Asym_similarity = Asym_similarity + W_weight * similarity_rate
+                            # the str_func has a matched signature in table_y
+                            match_flag = 1
+                            break
         return Asym_similarity
     
     # calculate program similarity of dir_prog with malwares stored in database
@@ -319,14 +341,18 @@ class ApproximateMatch():
         # the tested VNF program binary function signatures are stored in test_tb table
         test_tb = self.mal_db.storeLocalSignatures(dir_prog)
 #        print test_tb
-        print self.db_op.select(test_tb)
 
         # match the tested VNF binary with each of the malware stored in the database
         for line in f_mal.readlines():
+            print "\n"
+            print "The tested VNF function signature list:"
+            print self.db_op.select(test_tb)
+            print '\n'
             print "Comparing with " + line.strip()
             local_tb = self.db_op.reflectTB(dir_vnf + line.strip())
+            print 'The malware function signature list:'
             print self.db_op.select(local_tb)
-           
+            print '\n'
             # calculate asymmetric similarity of test_tb and local_tb
             # test_tb is the tested VNF function signatures table, 
             # local_tb is the malware function signatrues table
@@ -343,15 +369,17 @@ class ApproximateMatch():
 
 #        self.db_op.drop(test_tb)
  
-        print 'Similarity Ratio between ' + dir_prog + ' and VNFs in the MalwareDB: '
-        print max_sim
+#        print '\n\nSimilarity Ratio between ' + dir_prog + ' and VNFs in the MalwareDB: '
+#        print max_sim
 
         # if the program similarity of the tested VNF with the malware stored in database 
         # is larger than a given threshold, we report the tested VNF program is malicious 
+        print "\n**************Program Analysis Result********************"
+        print "\nThe program similarity ratio: " + str(max_sim)
         if max_sim >= self.threshold_prog:
-           print "The tested VNF is malicious!"
+           print "\nThe tested VNF is malicious!\n"
         else:
-           print "The tested VNF is secure at present!"
+           print "\nThe tested VNF is secure at present!\n"
 
 
   
@@ -364,7 +392,8 @@ if __name__ == "__main__":
     # approximate match to analyse tested VNF program
     am =  ApproximateMatch()
     # use the tested VNF ELF binary name as input
-    am.calcuProgramSim('../amoco/tests/samples/x86/cpflow.elf')
+#    am.calcuProgramSim('../amoco/tests/samples/x86/cpflow.elf')
+    am.calcuProgramSim('mymalware')
 
 
      
