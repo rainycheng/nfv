@@ -16,28 +16,38 @@ from sqlalchemy import create_engine, MetaData
 from sqlalchemy import Table, Column, Integer, String
 from sqlalchemy.sql import select,func
 
+#The BK-Tree exploit knowledge that the Levenshtein(edit) distance forms a metric space
+#The BK-Tree search algorithm is faster than an exhaustive comparison of each signature
+#in the dictionary. The BK-Tree query returns approximate signatures that allow
+#edit distance of n.
 class BkTree():
-    "A Bk-Tree implementation."
-     
+    '''A Bk-Tree implementation.'''
+    #root is a string type element.
     def __init__(self, root):
         self.root = root 
         self.tree = (root, {})
-     
+
+    #build the BK-Tree from the words string list 
     def build(self, words):
         "Build the tree."
         for word in words:
             self.tree = self.insert(self.tree, word)
 
+    #insert a signature (word) into the BK-Tree
     def insert(self, node, word):
         "Inserts a word in the tree."
+        #use the editdistance as the metric space in BK-Tree
         d = editdistance.eval(word, node[0])
-#        print node[1]
+
+        #increment a sub-tree if the editdistance d is not in node[1]
         if d not in node[1]:
             node[1][d] = (word, {})
         else:
             self.insert(node[1][d], word)
         return node
 
+    #query returns the signature string list that meet the requirement of 
+    #the editdistance of word and the signature is n 
     def query(self, word, n):
         "Returns a list of words that have the specified edit distance from the search word."
         def search(node):
@@ -54,43 +64,60 @@ class BkTree():
         root = self.tree
         return search(root)
 
+# DBOperator is used to operate with the local database
+# the database is the python built-in sqlite
 class DBOperator():
+    '''class DBOperator is responsible for database operations'''
     def __init__(self):
 	self.engine = create_engine('sqlite:///malwareVNF.db')
 	self.metadata = MetaData()
         self.metadata.bind = self.engine
+        #fetch metadata of tables in the database 
         self.metadata.reflect()
         self.conn = self.engine.connect()
 
+    # get the table named tb_name, return table object 
     def reflectTB(self, tb_name):
         return Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
-   
+
+    # drop table_t from the database 
     def drop(self, table_t):
         i = table_t.drop()
         r = self.conn.execute(i)
         return r
-     
+
+    # insert dict_u into table_t in the database
+    # example: dict_u = (digest='123', signature='abc')
     def insert(self, table_t, dict_u):
     	i = table_t.insert()
         r = self.conn.execute(i, **dict_u)
         return r
 
+    # select from table_t
+    # r.fetchall() returns the list of select results
     def select(self, table_t):
         s = select([table_t])
         r = self.conn.execute(s)
         return r.fetchall()
     
+    # exact select from table_t, where column signature equals str_sig
+    # return object r
     def exactSelect(self, table_t, str_sig):
         s = select([table_t]).where(table_t.c.signature == str_sig)
         r = self.conn.execute(s)
         return r
 
+    # count returns the number of instances in table_t
+    # table_t.c.id is the primary key
     def count(self, table_t):
         s = select([func.count(table_t.c.id)])
         r = self.conn.execute(s)
         return r.fetchall()[0][0]        
 
+#MalwareDB stores VNF signatures into a global table
+#stores each VNF basic functions signatures into each local table
 class MalwareDB():
+    '''class MalwareDB stores malware signatures into global/local tables'''
     def __init__(self):
         self.engine = create_engine('sqlite:///malwareVNF.db')
         self.metadata = MetaData()
@@ -99,6 +126,8 @@ class MalwareDB():
         self.conn = self.engine.connect()
         self.db_op = DBOperator()
 
+    # table global_t stores the malware signature and the corresponding hash digest of the signature
+    # the hash digest is created using sha512.
     def createGlobalTB(self): 
 	if 'global_t' not in self.metadata.tables:
             self.global_t = Table('global_t', self.metadata,
@@ -109,7 +138,13 @@ class MalwareDB():
         else:
             self.global_t = Table('global_t', self.metadata, autoload=True, autoload_with=self.engine)    
 
+    #create local table named tb_name
+    #tb_name stores malware basic functions signatures sig_fun
+    #each malware has a seprate local table to store sig_fun
     def createLocalTB(self, tb_name):
+        # if previously seen the same malware, we do not create the table, 
+        # just return the table object (in the else statement).
+        # we use the malware directory name as the local table name
         if tb_name not in self.metadata.tables: 
     	    local_t = Table(tb_name, self.metadata,
                             Column('id', Integer, primary_key=True),
@@ -120,6 +155,7 @@ class MalwareDB():
             local_t = Table(tb_name, self.metadata, autoload=True, autoload_with=self.engine)
         return local_t
 
+    # 
     def storeLocalSignatures(self, dir_prog):
         if dir_prog not in self.metadata.tables:
             local_t = self.createLocalTB(dir_prog)
