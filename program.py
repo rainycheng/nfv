@@ -307,28 +307,35 @@ class ApproximateMatch():
     
     # calculate program similarity of dir_prog with malwares stored in database
     def calcuProgramSim(self, dir_prog):
-        #Program_sims stores the program similarity of each analysed malware
+        # Program_sims stores the program similarity of each analysed malware
         Program_sims = []
-        #find out the maximum program similarity 
+        # find out the maximum program similarity 
         max_sim = 0
         
-        #the name of malware binaries are stored in malware.txt file
+        # the name of malware binaries are stored in malware.txt file
         f_mal = open('malware.txt','r')
         dir_vnf = '../amoco/tests/samples/'
         
-        #the tested VNF program binary function signatures are stored in test_tb table
+        # the tested VNF program binary function signatures are stored in test_tb table
         test_tb = self.mal_db.storeLocalSignatures(dir_prog)
 #        print test_tb
         print self.db_op.select(test_tb)
+
+        # match the tested VNF binary with each of the malware stored in the database
         for line in f_mal.readlines():
             print "Comparing with " + line.strip()
             local_tb = self.db_op.reflectTB(dir_vnf + line.strip())
             print self.db_op.select(local_tb)
+           
+            # calculate asymmetric similarity of test_tb and local_tb
+            # test_tb is the tested VNF function signatures table, 
+            # local_tb is the malware function signatrues table
             s_x = self.calcuAsymmetricSim(test_tb, local_tb)
             print 'Asym(test, local): ' + str(s_x)
             s_y = self.calcuAsymmetricSim(local_tb, test_tb)
             print 'Asym(local,test): ' + str(s_y)
             temp_sim = s_x * s_y
+
             print 'Similarity: ' + str(temp_sim)
             Program_sims.append(temp_sim)       
             if max_sim < temp_sim:
@@ -339,6 +346,8 @@ class ApproximateMatch():
         print 'Similarity Ratio between ' + dir_prog + ' and VNFs in the MalwareDB: '
         print max_sim
 
+        # if the program similarity of the tested VNF with the malware stored in database 
+        # is larger than a given threshold, we report the tested VNF program is malicious 
         if max_sim >= self.threshold_prog:
            print "The tested VNF is malicious!"
         else:
@@ -347,11 +356,14 @@ class ApproximateMatch():
 
   
 if __name__ == "__main__":
+
+    # build VNF malware database
     mal_db = MalwareDB()
     mal_db.buildVNFDB()
-
-    am =  ApproximateMatch()
     
+    # approximate match to analyse tested VNF program
+    am =  ApproximateMatch()
+    # use the tested VNF ELF binary name as input
     am.calcuProgramSim('../amoco/tests/samples/x86/cpflow.elf')
 
 
