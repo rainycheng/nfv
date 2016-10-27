@@ -56,9 +56,9 @@ class NFVMonitor(threading.Thread):
         return self.dom.blockStats('vda')
 
     #get network performance events
-    def getNETstats(self):
-        tree = ElementTree.fromstring(self.dom.XMLDesc())
-        iface = tree.find('devices/interface/target').get('dev')
+    def getNETstats(self, iface):
+        #tree = ElementTree.fromstring(self.dom.XMLDesc())
+        #iface = tree.find('devices/interface/target').get('dev')
         return self.dom.interfaceStats(iface)
 
     #record perfomrance monitoring events every 1s
@@ -67,7 +67,10 @@ class NFVMonitor(threading.Thread):
         cpu_prev = self.getCPUstats()
         mem_prev = self.getMEMstats()
         disk_prev = self.getDISKstats()
-        net_prev = self.getNETstats()
+        net_prev = []
+        tree = ElementTree.fromstring(self.dom.XMLDesc())
+        for iface in tree.findall('devices/interface/target'):
+            net_prev.append(self.getNETstats(iface.get('dev')))
         
         while self._running:
             time.sleep(1)
@@ -75,7 +78,7 @@ class NFVMonitor(threading.Thread):
             cpu_stats = self.getCPUstats()
             mem_stats = self.getMEMstats()
             disk_stats = self.getDISKstats()
-            net_stats = self.getNETstats()
+#            net_stats = self.getNETstats()
             #concatenate VNF features into VEC vector, features are ordered according to report 3
             #memory features 
             VEC = str(mem_stats['actual']) + ' ' + str(mem_stats['actual'] - mem_stats['unused'])
@@ -85,11 +88,21 @@ class NFVMonitor(threading.Thread):
             #disk features
             for i in range(0,4):
                 VEC = VEC + ' ' + str(disk_stats[i]) + ' ' + str(disk_stats[i] - disk_prev[i])
-            #net features
-            for i in range(0,8):
-                VEC = VEC + ' ' + str(net_stats[i]) + ' ' + str(net_stats[i] - net_prev[i])  
+            #multiple net interfaces
+            #tree = ElementTree.fromstring(self.dom.XMLDesc())
+            count = 0
+            net_stats = []
+            for iface in tree.findall('devices/interface/target'):
+                net_stats.append(self.getNETstats(iface.get('dev')))
+                count = count + 1
+            for j in range(0, count):
+                #net features
+                for i in range(0,8):
+                    VEC = VEC + ' ' + str(net_stats[j][i]) + ' ' + str(net_stats[j][i] - net_prev[j][i])  
+                print ('read packets/s: ' + str(net_stats[j][0]-net_prev[j][0]))
+                print ('write packets/s: ' + str(net_stats[j][5]-net_prev[j][5]))
+
             VEC = VEC + '\n'
-            
             #NFVmonitor put monitoring events into a shared queue
             self.queue.put(VEC)
             
@@ -269,10 +282,10 @@ class NFVThrottle(threading.Thread):
     def throttleDISK(self, quota, op):
         cgdir = '/sys/fs/cgroup/blkio/machine/'
         if (op == 'read_iops'):
-            COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \\
+            COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \
                     + '.libvirt-qemu/blkio.throttle.read_iops_device'
-        else if (op == 'write_iops'):
-            COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \\
+        elif (op == 'write_iops'):
+            COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \
                     + '.libvirt-qemu/blkio.throttle.write_iops_device'
         p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         p.wait()
@@ -306,12 +319,15 @@ class NFVRegulator(threading.Thread):
         self.startRegulate()
 
 if __name__ == "__main__":
+   
+    if len(sys.argv) == 1:
+       print ("please give the domain id parameter!\n")
     # the shared queue q is used by NFVMonitor and NFVCluster, each item in the q is the performance vector
     Q_vec = Queue.Queue()
     # the shared queue qc is used by NFVCluster and NFVHMM, each item in the qc is the observation
     Q_obv = Queue.Queue()
  
-    nfv_monitor = NFVMonitor('nfv_monitor', 33, Q_vec)
+    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
     nfv_monitor.start()
     time.sleep(5)
     nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
@@ -320,7 +336,7 @@ if __name__ == "__main__":
 
     nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
     nfv_hmm.start()
-    time.sleep(50)
+    time.sleep(10)
     
     nfv_monitor.terminate()
     nfv_cluster.terminate()
