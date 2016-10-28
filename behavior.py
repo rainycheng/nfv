@@ -81,13 +81,20 @@ class NFVMonitor(threading.Thread):
 #            net_stats = self.getNETstats()
             #concatenate VNF features into VEC vector, features are ordered according to report 3
             #memory features 
-            VEC = str(mem_stats['actual']) + ' ' + str(mem_stats['actual'] - mem_stats['unused'])
+            VEC = str(mem_stats['major_fault'] - mem_prev['major_fault'])
+            VEC = VEC + ' ' + str(mem_stats['minor_fault'] - mem_prev['minor_fault'])
+            VEC = VEC + ' ' + str(mem_stats['rss'] - mem_prev['rss'])
             #CPU features
-            VEC = VEC + ' ' + str(cpu_stats[0]['cpu_time'])
-            VEC = VEC + ' ' + str(cpu_stats[0]['cpu_time']-cpu_prev[0]['cpu_time'])
+            VEC = VEC + ' ' + str(cpu_stats[0]['system_time']-cpu_prev[0]['system_time'])
+            VEC = VEC + ' ' + str(cpu_stats[0]['user_time']-cpu_prev[0]['user_time'])
             #disk features
-            for i in range(0,4):
-                VEC = VEC + ' ' + str(disk_stats[i]) + ' ' + str(disk_stats[i] - disk_prev[i])
+#            for i in range(0,4):
+#                VEC = VEC + ' ' + str(disk_stats[i]) + ' ' + str(disk_stats[i] - disk_prev[i])
+            #read bytes/s
+            VEC = VEC + ' ' + str(disk_stats[1] - disk_prev[1])
+            #write bytes/s
+            VEC = VEC + ' ' + str(disk_stats[3] - disk_prev[3])
+
             #multiple net interfaces
             #tree = ElementTree.fromstring(self.dom.XMLDesc())
             count = 0
@@ -98,14 +105,14 @@ class NFVMonitor(threading.Thread):
             for j in range(0, count):
                 #net features
                 for i in range(0,8):
-                    VEC = VEC + ' ' + str(net_stats[j][i]) + ' ' + str(net_stats[j][i] - net_prev[j][i])  
-                print ('read packets/s: ' + str(net_stats[j][0]-net_prev[j][0]))
-                print ('write packets/s: ' + str(net_stats[j][5]-net_prev[j][5]))
+                    VEC = VEC + ' ' + str(net_stats[j][i] - net_prev[j][i])  
+#                print ('read packets/s: ' + str(net_stats[j][0]-net_prev[j][0]))
+#                print ('write packets/s: ' + str(net_stats[j][5]-net_prev[j][5]))
 
             VEC = VEC + '\n'
             #NFVmonitor put monitoring events into a shared queue
             self.queue.put(VEC)
-            
+            print (VEC)        
             #write stats_vector into features.txt file, do not foget to flush into disk
             self.features.write(VEC)
             self.features.flush()
@@ -252,6 +259,8 @@ class NFVHMM(threading.Thread):
             #if the Log likelihood Q is below a given threshold, report 'Abnormal'
             if (Q < self.threshold):
                 print ("Abnormal NFV. Q = " + str(Q) + "\n")
+            else:
+                print ("Likelihood Q = " + str(Q) + "\n")
             time.sleep(1)   
 
     def run(self):
@@ -329,7 +338,7 @@ if __name__ == "__main__":
  
     nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
     nfv_monitor.start()
-    time.sleep(5)
+    time.sleep(15)
     nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
     nfv_cluster.start()
     time.sleep(10)
