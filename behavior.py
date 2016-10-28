@@ -112,7 +112,7 @@ class NFVMonitor(threading.Thread):
             VEC = VEC + '\n'
             #NFVmonitor put monitoring events into a shared queue
             self.queue.put(VEC)
-            print (VEC)        
+#            print (VEC)        
             #write stats_vector into features.txt file, do not foget to flush into disk
             self.features.write(VEC)
             self.features.flush()
@@ -137,15 +137,16 @@ class NFVCluster(threading.Thread):
         self.obv_queue = obv_queue
         #estimators are used to save different KMeans algos (# of clusters). Example:
         #http://scikit-learn.org/stable/auto_examples/cluster/plot_cluster_iris.html
-        self.estimators = {'k_means_10': KMeans(n_clusters=10)}
-                          # 'k_means_20': KMeans(n_clusters=20),
-                          # 'k_means_30': KMeans(n_clusters=30)}
+        self.estimators = {'k_means_8': KMeans(n_clusters=8),
+                           'k_means_10': KMeans(n_clusters=10),
+                           'k_means_30': KMeans(n_clusters=30)}
 
         #load VNF performance monitoring features into the featuresX vector
         self.featuresX = np.loadtxt('features.txt')
 
         #items()[0] is a 2-tuple, self.est is used to execute kmeans (est.fit(X))
-        self.estname, self.est = self.estimators.items()[0]
+        self.estname1, self.est1 = self.estimators.items()[0]
+        self.estname2, self.est2 = self.estimators.items()[1]
         
         threading.Thread.__init__(self, name=t_name)
     
@@ -156,7 +157,8 @@ class NFVCluster(threading.Thread):
     #http://scikit-learn.org/stable/modules/generated/sklearn.cluster.KMeans.html
     def startCluster(self):
         #compute k-means clustering
-        self.est.fit(self.featuresX)
+        self.est1.fit(self.featuresX[:,0:7])
+        self.est2.fit(self.featuresX[:,7:23])
 
         #labels.txt is used to record the labels of observations
         labels = open('/home/stack/labels.txt','w')
@@ -164,9 +166,15 @@ class NFVCluster(threading.Thread):
         cluster_centers = open('/home/stack/centers.txt','w')
         
         #using str() to write readable formats into files
-        for lab in self.est.labels_:
-            labels.write(str(lab)+'\n')
-        for cent in self.est.cluster_centers_:
+        i=0
+        for lab in self.est1.labels_:
+            lab_str = str(lab) + ' ' + str(self.est2.labels_[i]) +'\n'
+            labels.write(lab_str)
+            i = i+1
+
+        for cent in self.est1.cluster_centers_:
+            cluster_centers.write(str(cent)+"\n")
+        for cent in self.est2.cluster_centers_:
             cluster_centers.write(str(cent)+"\n")
         
         #close the opened files
@@ -185,9 +193,10 @@ class NFVCluster(threading.Thread):
         sampleX = np.array([float(i) for i in sample_vector.split(' ')])
         #the sample has only one feature, use X.reshape(1,-1) to adjust dimension
         #predict the cluster label of sampleX
-        sample_label = self.est.predict(sampleX.reshape(1,-1))
+        sample_lab1 = self.est1.predict(sampleX[0:7].reshape(1,-1))
+        sample_lab2 = self.est2.predict(sampleX[7:23].reshape(1,-1))
         #put sample_label into obv_queue
-        self.obv_queue.put(sample_label) 
+        self.obv_queue.put(np.hstack((sample_lab1,sample_lab2))) 
 
     def run(self):
         self.startCluster()
@@ -211,7 +220,8 @@ class NFVHMM(threading.Thread):
         self.X = []
 
         #use GaussianHMM, n_components is the number of hidden states
-        self.hmm = hmm.GaussianHMM(n_components=5, covariance_type="full")
+#        self.hmm = hmm.GaussianHMM(n_components=5, covariance_type="full")
+        self.hmm = hmm.GaussianHMM(n_components=5)
 
         threading.Thread.__init__(self, name=t_name)
     
@@ -224,7 +234,8 @@ class NFVHMM(threading.Thread):
             #queue.get([block[,timeout]]) method. https://docs.python.org/2/library/queue.html
             #block=1 means block if necessary until an item is available, timeout=3 means block
             #at most 3 sesconds and raises the Empty exception if no item was available within 3s
-            Observation = self.queue.get(1,3)
+            Observation = []
+            Observation.append(self.queue.get(1,3))
             #indicate that a formerly enqueued task is complete
             self.queue.task_done()         
         except Exception, e:
@@ -234,23 +245,27 @@ class NFVHMM(threading.Thread):
         self.X.append(Observation[0])
         #keep the list length of self.X fixed to a given number
         #delete the old items in the head of self.X list 
-        if (len(self.X) > 20):
+        if (len(self.X) > 10):
             del self.X[0]
-    
+#        print (self.X)
+ 
     def trainHMM(self):
         #the trained VNF feature stats are stored in 'features.txt'
         #the corresponding VNF cluster labels are stored in 'labels.txt'  
         obvX = np.loadtxt('labels.txt')
         #the obvX has only one feature, using X.reshape(-1,1) to format dimension
         #hmm.fit is used to train the GaussianHMM model
-        self.hmm.fit(obvX.reshape(-1,1))
-
+#        self.hmm.fit(obvX.reshape(-1,1))
+        self.hmm.fit(obvX)
+ 
     def predictHMM(self):
         self.getObservation()
 #        print (self.X)
         sampleX = np.array(self.X)
         #hmm.score returns the Log likelihood of sampleX under the model
-        return self.hmm.score(sampleX.reshape(-1,1)) 
+#        return self.hmm.score(sampleX.reshape(-1,1)) 
+        print (sampleX.reshape(-1,2))
+        return self.hmm.score(sampleX.reshape(-1,2)) 
 
     def startHMM(self):
         self.trainHMM()
@@ -345,7 +360,7 @@ if __name__ == "__main__":
 
     nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
     nfv_hmm.start()
-    time.sleep(10)
+    time.sleep(50)
     
     nfv_monitor.terminate()
     nfv_cluster.terminate()
