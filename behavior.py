@@ -112,7 +112,7 @@ class NFVMonitor(threading.Thread):
             VEC = VEC + '\n'
             #NFVmonitor put monitoring events into a shared queue
             self.queue.put(VEC)
-#            print (VEC)        
+            print (VEC)        
             #write stats_vector into features.txt file, do not foget to flush into disk
             self.features.write(VEC)
             self.features.flush()
@@ -353,21 +353,21 @@ if __name__ == "__main__":
  
     nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
     nfv_monitor.start()
-    time.sleep(15)
-    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
-    nfv_cluster.start()
-    time.sleep(10)
-
-    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
-    nfv_hmm.start()
-    time.sleep(50)
+    time.sleep(5)
+#    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
+#    nfv_cluster.start()
+#    time.sleep(10)
+#
+#    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
+#    nfv_hmm.start()
+#    time.sleep(50)
     
     nfv_monitor.terminate()
-    nfv_cluster.terminate()
-    nfv_hmm.terminate()
+#    nfv_cluster.terminate()
+#    nfv_hmm.terminate()
 
     #nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
     #nfv_cluster.start()
     nfv_monitor.join()
-    nfv_cluster.join()
-    nfv_hmm.join()
+#    nfv_cluster.join()
+#    nfv_hmm.join()
