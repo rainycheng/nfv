@@ -210,7 +210,8 @@ class MalwareDB():
     # the VNF malware binary names are stored in the malware.txt file
     def buildVNFDB(self):
         f_mal = open('malware.txt','r')
-        dir_vnf = '../amoco/tests/samples/'
+        #take care of the relative path of malware samples
+        dir_vnf = 'amoco/tests/samples/'
 
         for line in f_mal.readlines():
             self.storeSignatures(dir_vnf + line.strip())
@@ -336,7 +337,8 @@ class ApproximateMatch():
         
         # the name of malware binaries are stored in malware.txt file
         f_mal = open('malware.txt','r')
-        dir_vnf = '../amoco/tests/samples/'
+        # this is a relative path, be careful when the program is moved to another machine
+        dir_vnf = 'amoco/tests/samples/'
         
         # the tested VNF program binary function signatures are stored in test_tb table
         test_tb = self.mal_db.storeLocalSignatures(dir_prog)
