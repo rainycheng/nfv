@@ -489,15 +489,15 @@ if __name__ == "__main__":
 #
 
     # NFVHMM is used to predict abnormal behavior of VNF instances
-    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
-    nfv_hmm.trainHMM('train_label.txt')
-    nfv_hmm.offlinePredict('train_label.txt','hmm_result_man6.txt')
-    nfv_hmm.offlinePredict('predict_label.txt','hmm_result_man7.txt')
+#    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
+#    nfv_hmm.trainHMM('train_label.txt')
+#    nfv_hmm.offlinePredict('train_label.txt','hmm_result_man6.txt')
+#    nfv_hmm.offlinePredict('predict_label.txt','hmm_result_man7.txt')
 #    nfv_hmm.start()
 #    time.sleep(50)
     
 #    nfv_monitor.terminate()
-#    nfv_cluster.terminate()
+    nfv_cluster.terminate()
 #    nfv_hmm.terminate()
 
     #nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)

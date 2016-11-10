@@ -469,34 +469,34 @@ if __name__ == "__main__":
     Q_obv = Queue.Queue()
 
     # NFVMonitor is used to collect VNF instance performance featuress 
-#    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
-#    nfv_monitor.start()
-#    time.sleep(600)
+    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
+    nfv_monitor.start()
+    time.sleep(600)
 
-    # NFVCluster is used to cluster performance features samples into several clusters 
-    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
-    # trainCluster function accept three parameters
-    # 'train_features.txt' is the input file containing the collected VNF performance features
-    # 'out_stand.txt' is the output file containing the preprocessed standardization features of 'train_features.txt'
-    # 'train_label.txt' is the output file containing the clustered labels of each feature samples
-    nfv_cluster.trainCluster('train_features.txt','out_stand.txt','train_label.txt')
-    # 'predict_features.txt' is the input file containing the collected VNF performance features being predicted
-    # 'out_stand1.txt' is the output file containing the preprocessed standardization features of 'predict_features.txt'
-    # 'predict_label.txt' is the output file containing the predicted cluster labels of each feature samples
-    nfv_cluster.offlinePredict('predict_features.txt','out_stand1.txt','predict_label.txt')
+#    # NFVCluster is used to cluster performance features samples into several clusters 
+#    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
+#    # trainCluster function accept three parameters
+#    # 'train_features.txt' is the input file containing the collected VNF performance features
+#    # 'out_stand.txt' is the output file containing the preprocessed standardization features of 'train_features.txt'
+#    # 'train_label.txt' is the output file containing the clustered labels of each feature samples
+#    nfv_cluster.trainCluster('train_features.txt','out_stand.txt','train_label.txt')
+#    # 'predict_features.txt' is the input file containing the collected VNF performance features being predicted
+#    # 'out_stand1.txt' is the output file containing the preprocessed standardization features of 'predict_features.txt'
+#    # 'predict_label.txt' is the output file containing the predicted cluster labels of each feature samples
+#    nfv_cluster.offlinePredict('predict_features.txt','out_stand1.txt','predict_label.txt')
 #    nfv_cluster.start()
 #    time.sleep(10)
 #
 
     # NFVHMM is used to predict abnormal behavior of VNF instances
-    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
-    nfv_hmm.trainHMM('train_label.txt')
-    nfv_hmm.offlinePredict('train_label.txt','hmm_result_man6.txt')
-    nfv_hmm.offlinePredict('predict_label.txt','hmm_result_man7.txt')
+#    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
+#    nfv_hmm.trainHMM('train_label.txt')
+#    nfv_hmm.offlinePredict('train_label.txt','hmm_result_man6.txt')
+#    nfv_hmm.offlinePredict('predict_label.txt','hmm_result_man7.txt')
 #    nfv_hmm.start()
 #    time.sleep(50)
     
-#    nfv_monitor.terminate()
+    nfv_monitor.terminate()
 #    nfv_cluster.terminate()
 #    nfv_hmm.terminate()
 
