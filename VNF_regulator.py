@@ -430,24 +430,54 @@ class NFVRegulator(threading.Thread):
         self._running = True
         threading.Thread.__init__(self, name=t_name)
         self.features = np.loadtxt('features.txt')
-        self.length = len(self.features)    
-        self.execute = NFVThrottle('nfv_throttle')
+        # shape[0] number of rows, shape[1] number of columns
+        self.length = self.features.shape[0]   
+        self.execute = NFVThrottle('nfv_throttle','instance-00000008')
 
     def terminate(self):
         self._running = False
 
     def calcuCPUthresh(self):
         da_cpu = self.features[(self.length-100):self.length,3:5]
+        da_filter = []
+        for ca in da_cpu:
+            if (not(ca[0]==0 and ca[1]==0)):
+                da_filter.append(ca[0] + ca[1])
+        cpu_mean = np.mean(da_filter)
+        cpu_std = np.std(da_filter)
         
-         
+        throttle_percent = cpu_std / (cpu_mean + 3*cpu_std)
+        # two VCPU scenario, 100000 is the value of cpu.cfs_period_us
+        cpu_quota = 2*100000*(1 - throttle_percent)
+        
+        return cpu_quota 
+
     def calcuMEMthresh(self):
         da_mem = self.features[(self.length-100):self.length,0:3]
+        da_filter = []
+        for ma in da_mem[:,2]:
+            if (ma != 0):
+                da_filter.append(ma)
+        
+        print (len(da_filter))
+        
+        throttle_percent = 0
+        if (len(da_filter) !=0 ):
+            mem_mean = np.mean(da_filter)
+            mem_std = np.std(da_filter)
+            throttle_percent = mem_std / (mem_mean + 3*mem_std)
+        # 4 GB memory scenario
+        mem_quota = 4*1024*1024*1024*(1-throttle_percent)
+        return mem_quota
+               
 
     def calcuDISKthresh(self):
         da_disk = self.features[(self.length-100):self.length,5:7]
 
+
     def calcuNETthresh(self):
         da_net = self.features[(self.length-100):self.length,7:23]
+
 
     def startRegulate(self):
         cpu_thresh = self.calcuCPUthresh()
@@ -460,7 +490,9 @@ class NFVRegulator(threading.Thread):
         
 
     def run(self):
-        self.startRegulate()
+        # skip regulation if there are too few history samples
+        if (self.length > 100):
+            self.startRegulate()
 
 if __name__ == "__main__":
 
@@ -494,7 +526,8 @@ if __name__ == "__main__":
     Q_obv = Queue.Queue()
 
     nfv_regulator = NFVRegulator('nfv_regulator')
-    nfv_regulator.getCPUthresh()
+    nfv_regulator.calcuCPUthresh()
+    nfv_regulator.calcuMEMthresh()
 
     # NFVMonitor is used to collect VNF instance performance featuress 
 #    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
