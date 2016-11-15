@@ -400,22 +400,25 @@ class NFVThrottle(threading.Thread):
 
     def throttleDISK(self, quota, op):
         cgdir = '/sys/fs/cgroup/blkio/machine/'
-        if (op == 'read_iops'):
+        if (op == 'read_bps'):
             COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \
-                    + '.libvirt-qemu/blkio.throttle.read_iops_device'
-        elif (op == 'write_iops'):
+                    + '.libvirt-qemu/blkio.throttle.read_bps_device'
+        elif (op == 'write_bps'):
             COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \
-                    + '.libvirt-qemu/blkio.throttle.write_iops_device'
+                    + '.libvirt-qemu/blkio.throttle.write_bps_device'
         p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         p.wait()
 
-    def throttleNET(self, quota, op):
-        dev = 'tap0'
-        dev1 = 'tap4a75cfa4-8c'
-        rate = 'rate=1000'
-        COMMAND = 'ovs-vsctl set interface ' + dev + 'ingress_policing_'+ rate
+    def throttleNET(self, in_quota, e_quota, dev):
+        #dev = 'tap0'
+        #dev1 = 'tap4a75cfa4-8c'
+        #rate = 'rate=1000'
+        COMMAND = 'ovs-vsctl set interface ' + dev + 'ingress_policing_rate=' + str(in_quota)
         p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        p.wait()  
+        p.wait()
+        COMMAND = 'ovs-vsctl set interface ' + dev + 'egress_policing_rate=' + str(e_quota)  
+        p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        p.wait()
 
     def startThrottle(self):
         print ("OK!\n")  
@@ -437,16 +440,20 @@ class NFVRegulator(threading.Thread):
     def terminate(self):
         self._running = False
 
+    def throttlePercent(self, da):
+        mean = np.mean(da)
+        std = np.std(da)
+        throttle = std / (mean + 3*std)
+        return throttle
+
     def calcuCPUthresh(self):
         da_cpu = self.features[(self.length-100):self.length,3:5]
         da_filter = []
         for ca in da_cpu:
             if (not(ca[0]==0 and ca[1]==0)):
                 da_filter.append(ca[0] + ca[1])
-        cpu_mean = np.mean(da_filter)
-        cpu_std = np.std(da_filter)
-        
-        throttle_percent = cpu_std / (cpu_mean + 3*cpu_std)
+       
+        throttle_percent = self.throttlePercent(da_filter)
         # two VCPU scenario, 100000 is the value of cpu.cfs_period_us
         cpu_quota = 2*100000*(1 - throttle_percent)
         
@@ -459,13 +466,9 @@ class NFVRegulator(threading.Thread):
             if (ma != 0):
                 da_filter.append(ma)
         
-        print (len(da_filter))
-        
         throttle_percent = 0
         if (len(da_filter) !=0 ):
-            mem_mean = np.mean(da_filter)
-            mem_std = np.std(da_filter)
-            throttle_percent = mem_std / (mem_mean + 3*mem_std)
+            throttle_percent = self.throttlePercent(da_filter)
         # 4 GB memory scenario
         mem_quota = 4*1024*1024*1024*(1-throttle_percent)
         return mem_quota
@@ -473,21 +476,87 @@ class NFVRegulator(threading.Thread):
 
     def calcuDISKthresh(self):
         da_disk = self.features[(self.length-100):self.length,5:7]
+        da_rfilter = []
+        da_wfilter = []
+        for ra in da_disk[:,0]:
+            if (ra != 0):
+                da_rfilter.append(ra)
+        for wa in da_disk[:,1]:
+            if (wa != 0):
+                da_wfilter.append(wa)
+        
+        throttle_rpercent = 0
+        throttle_wpercent = 0
+        if (len(da_rfilter) != 0):
+            throttle_rpercent = self.throttlePercent(da_rfilter)
+        if (len(da_wfilter) != 0):
+            throttle_wpercent = self.throttlePercent(da_wfilter)
+        
+        read_quota = 104857600*(1-throttle_rpercent)
+        write_quota = 104857600*(1-throttle_wpercent)
 
+        return read_quota, write_quota        
 
     def calcuNETthresh(self):
         da_net = self.features[(self.length-100):self.length,7:23]
+        # dev0, dev1 info in the xml file, /opt/stack/data/nova/instances
+        da0_infilter = []
+        da0_efilter = []
+        da1_infilter = []
+        da1_efilter = []
+        # dev0 read bytes
+        for a0_in in da_net[:,0]:
+            if (a0_in != 0):
+                da0_infilter.append(a0_in)
+        # dev0 write bytes
+        for a0_e in da_net[:,4]:
+            if (a0_e != 0):
+                da0_efilter.append(a0_e)
+        # dev1 read bytes
+        for a1_in in da_net[:,8]:
+            if (a1_in != 0):
+                da1_infilter.append(a1_in)
+        # dev1 write bytes
+        for a1_e in da_net[:,12]:
+            if (a1_e != 0):
+                da1_efilter.append(a1_e)
+        throttle0_in = 0
+        throttle0_e = 0
+        throttle1_in = 0
+        throttle1_e = 0
+        if (len(da0_infilter) != 0):
+            throttle0_in = self.throttlePercent(da0_infilter)
+        if (len(da0_efilter) != 0):
+            throttle0_e = self.throttlePercent(da0_efilter)
+        if (len(da1_infilter) != 0):
+            throttle1_in = self.throttlePercent(da1_infilter)
+        if (len(da1_efilter) != 0):
+            throttle1_in = self.throttlePercent(da1_efilter)
+        dev0 = 'tapa3502e00-82'
+        dev1 = 'tapc56fd03b-31'
+        # maximum bandwidth 100Mb, default Kbps
+        quota0_in = 102400 * (1-throttle0_in)  
+        quota0_e = 102400 * (1-throttle0_e)  
+        quota1_in = 102400 * (1-throttle1_in)  
+        quota1_e = 102400 * (1-throttle1_e)
+        
+        return quota0_in, quota0_e, quota1_in, quota1_e  
 
 
     def startRegulate(self):
         cpu_thresh = self.calcuCPUthresh()
         mem_thresh = self.calcuMEMthresh()
-        disk_thresh = self.calcuDISKthresh()
-        net_thresh = self.calcuNETthresh()
+        disk_rthresh,disk_wthresh = self.calcuDISKthresh()
+        net_in0,net_e0,net_in1,net_e1 = self.calcuNETthresh()
 
+        dev0 = 'tapa3502e00-82'
+        dev1 = 'tapc56fd03b-31'
         self.execute.throttleCPU(cpu_thresh)
         self.execute.throttleMEM(mem_thresh)
-        
+        self.execute.throttleDISK(disk_rthresh, 'read_bps')
+        self.execute.throttleDISK(disk_wthresh, 'write_bps')        
+        self.execute.throttleNET(net_in0, net_e0, dev0)
+        self.execute.throttleNT(net_in1, net_e1, dev1)
 
     def run(self):
         # skip regulation if there are too few history samples
