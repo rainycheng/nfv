@@ -378,6 +378,7 @@ class NFVHMM(threading.Thread):
 # NFVThrottle provides the mechanisms to throttle CPU/MEM/DISK/Network resources of NFV
 class NFVThrottle(threading.Thread):
     """VM resource throttle"""
+    # t_name is the thread name, inst_name is the instance name (through virsh list)
     def __init__(self, t_name, inst_name):
         self._running = True
         self.inst_name = inst_name
@@ -386,39 +387,52 @@ class NFVThrottle(threading.Thread):
     def terminate(self):
         self._running = False
 
+    # throttle CPU quota
     def throttleCPU(self, quota):
         cgdir = '/sys/fs/cgroup/cpu/machine/'
-        COMMAND = 'echo ' + quota + ' > ' + cgdir + self.inst_name + '.libvirt-qemu/cpu.cfs_quota_us'      
+        # cfs_quota_us is the hard limit CPU time slice allocated to this VM
+        # https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/6/html/Resource_Management_Guide/sec-cpu.html 
+        COMMAND = 'echo ' + str(quota) + ' > ' + cgdir + self.inst_name + '.libvirt-qemu/cpu.cfs_quota_us'      
         p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         p.wait()
 
+    # throttle memory resource
     def throttleMEM(self, quota):
         cgdir = '/sys/fs/cgroup/memory/machine/'
-        COMMAND = 'echo ' + quota + ' > ' + cgdir + self.inst_name + '.libvirt-qemu/memory.limit_in_bytes'
+        # memory.limit_in_bytes is the maximum amount of user memory
+        # https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/6/html/Resource_Management_Guide/sec-memory.html
+        COMMAND = 'echo ' + str(quota) + ' > ' + cgdir + self.inst_name + '.libvirt-qemu/memory.limit_in_bytes'
         p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         p.wait()
 
+    # throttle disk bandwidth
     def throttleDISK(self, quota, op):
         cgdir = '/sys/fs/cgroup/blkio/machine/'
         if (op == 'read_bps'):
-            COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \
+        # read_bps_device specifies the upper limit on the number of read operations a device can perform.
+        # https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/6/html/Resource_Management_Guide/ch-Subsystems_and_Tunable_Parameters.html#sec-blkio    
+            COMMAND = 'echo ' + '8:0 ' + str(quota) + ' > ' + cgdir + self.inst_name \
                     + '.libvirt-qemu/blkio.throttle.read_bps_device'
         elif (op == 'write_bps'):
-            COMMAND = 'echo ' + '8:0 ' + quota + ' > ' + cgdir + self.inst_name \
+        # write_bps_device specifies the upper limit on the number of write operations a device can perform.
+            COMMAND = 'echo ' + '8:0 ' + str(quota) + ' > ' + cgdir + self.inst_name \
                     + '.libvirt-qemu/blkio.throttle.write_bps_device'
         p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         p.wait()
 
+    # throttle network interface bandwidth
     def throttleNET(self, in_quota, e_quota, dev):
         #dev = 'tap0'
         #dev1 = 'tap4a75cfa4-8c'
         #rate = 'rate=1000'
+        # ingress_policing_rate limits this network interface sending bandwidth
+        # http://openvswitch.org/support/dist-docs/ovs-vsctl.8.txt
         COMMAND = 'ovs-vsctl set interface ' + dev + 'ingress_policing_rate=' + str(in_quota)
         p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         p.wait()
-        COMMAND = 'ovs-vsctl set interface ' + dev + 'egress_policing_rate=' + str(e_quota)  
-        p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        p.wait()
+#        COMMAND = 'ovs-vsctl set interface ' + dev + 'egress_policing_rate=' + str(e_quota)  
+#        p = subprocess.Popen(COMMAND, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+#        p.wait()
 
     def startThrottle(self):
         print ("OK!\n")  
@@ -427,29 +441,39 @@ class NFVThrottle(threading.Thread):
         self.startThrottle()
 
 # NFVRegulator regulates NFV resources usage when the HMM model reports abnormal VNF behaviors
-# To be done
 class NFVRegulator(threading.Thread):
     def __init__(self, t_name):
         self._running = True
         threading.Thread.__init__(self, name=t_name)
+        # features.txt is the performance monitoring events file
         self.features = np.loadtxt('features.txt')
         # shape[0] number of rows, shape[1] number of columns
-        self.length = self.features.shape[0]   
+        self.length = self.features.shape[0]
+        # create NFVThrottle instance, 'instance-00000008' is the NFV VM name (virsh list)
         self.execute = NFVThrottle('nfv_throttle','instance-00000008')
 
     def terminate(self):
         self._running = False
 
+    # calculate the percentage of resource throttling 
     def throttlePercent(self, da):
+        # mean of the given data array (da)
         mean = np.mean(da)
+        # standardard deviation of the given da
         std = np.std(da)
+        # allow three std
         throttle = std / (mean + 3*std)
         return throttle
 
+    # calculate CPU throttle threshold
+    # return the CPU throttle quota
     def calcuCPUthresh(self):
+        # calculate the last 100 monitoring samples
+        # column 3,4 are cpu related features, CPU system and user usages 
         da_cpu = self.features[(self.length-100):self.length,3:5]
         da_filter = []
         for ca in da_cpu:
+            # skip the sample if both features are zero
             if (not(ca[0]==0 and ca[1]==0)):
                 da_filter.append(ca[0] + ca[1])
        
@@ -457,12 +481,18 @@ class NFVRegulator(threading.Thread):
         # two VCPU scenario, 100000 is the value of cpu.cfs_period_us
         cpu_quota = 2*100000*(1 - throttle_percent)
         
-        return cpu_quota 
+        return int(cpu_quota) 
 
+    # calculate Memory throttle threshold
+    # return Memory throttle quota
     def calcuMEMthresh(self):
+        # calculate the last 100 monitoring samples
+        # column 0,1,2 are memory related features, major faults, minor faults, residence size
         da_mem = self.features[(self.length-100):self.length,0:3]
         da_filter = []
+        # only column 2, residence size is used to determine memory size limit
         for ma in da_mem[:,2]:
+            # filter samples whose value is zero
             if (ma != 0):
                 da_filter.append(ma)
         
@@ -471,10 +501,12 @@ class NFVRegulator(threading.Thread):
             throttle_percent = self.throttlePercent(da_filter)
         # 4 GB memory scenario
         mem_quota = 4*1024*1024*1024*(1-throttle_percent)
-        return mem_quota
+        return int(mem_quota)
                
-
+    # calculate Disk bandwidth throttle threshold
+    # return Disk read/write bandwidth throttle quotas
     def calcuDISKthresh(self):
+        # column 5,6 are disk read/write bandwidth usage features
         da_disk = self.features[(self.length-100):self.length,5:7]
         da_rfilter = []
         da_wfilter = []
@@ -491,14 +523,18 @@ class NFVRegulator(threading.Thread):
             throttle_rpercent = self.throttlePercent(da_rfilter)
         if (len(da_wfilter) != 0):
             throttle_wpercent = self.throttlePercent(da_wfilter)
-        
+        # the maximum read/write bandwidth is 100MB, can be set to a larger value
         read_quota = 104857600*(1-throttle_rpercent)
         write_quota = 104857600*(1-throttle_wpercent)
 
-        return read_quota, write_quota        
+        return int(read_quota), int(write_quota)        
 
+    # calculate network bandwidth throttle threshold
+    # return network bandwidth throttle quotas
     def calcuNETthresh(self):
+        # column [7,23) are network features 
         da_net = self.features[(self.length-100):self.length,7:23]
+        # two network interfaces in this case
         # dev0, dev1 info in the xml file, /opt/stack/data/nova/instances
         da0_infilter = []
         da0_efilter = []
@@ -520,6 +556,7 @@ class NFVRegulator(threading.Thread):
         for a1_e in da_net[:,12]:
             if (a1_e != 0):
                 da1_efilter.append(a1_e)
+        # in: ingress, e: egress
         throttle0_in = 0
         throttle0_e = 0
         throttle1_in = 0
@@ -540,23 +577,28 @@ class NFVRegulator(threading.Thread):
         quota1_in = 102400 * (1-throttle1_in)  
         quota1_e = 102400 * (1-throttle1_e)
         
-        return quota0_in, quota0_e, quota1_in, quota1_e  
+        return int(quota0_in), int(quota0_e), int(quota1_in), int(quota1_e)  
 
 
     def startRegulate(self):
-        cpu_thresh = self.calcuCPUthresh()
-        mem_thresh = self.calcuMEMthresh()
-        disk_rthresh,disk_wthresh = self.calcuDISKthresh()
-        net_in0,net_e0,net_in1,net_e1 = self.calcuNETthresh()
-
-        dev0 = 'tapa3502e00-82'
-        dev1 = 'tapc56fd03b-31'
-        self.execute.throttleCPU(cpu_thresh)
-        self.execute.throttleMEM(mem_thresh)
-        self.execute.throttleDISK(disk_rthresh, 'read_bps')
-        self.execute.throttleDISK(disk_wthresh, 'write_bps')        
-        self.execute.throttleNET(net_in0, net_e0, dev0)
-        self.execute.throttleNT(net_in1, net_e1, dev1)
+        # skip regulation if there are too few history samples
+        if (self.length > 100):
+            cpu_thresh = self.calcuCPUthresh()
+            mem_thresh = self.calcuMEMthresh()
+            disk_rthresh,disk_wthresh = self.calcuDISKthresh()
+            net_in0,net_e0,net_in1,net_e1 = self.calcuNETthresh()
+            # dev0 name is from xml file
+            dev0 = 'tapa3502e00-82'
+            # if0 is the corresponding interface name from ovs-ctl show command
+            if0 = 'qvoa3502e00-82'
+            dev1 = 'tapc56fd03b-31'
+            if1 = 'qvoc56fd03b-31'
+            self.execute.throttleCPU(cpu_thresh)
+            self.execute.throttleMEM(mem_thresh)
+            self.execute.throttleDISK(disk_rthresh, 'read_bps')
+            self.execute.throttleDISK(disk_wthresh, 'write_bps')        
+            self.execute.throttleNET(net_in0, net_e0, if0)
+            self.execute.throttleNET(net_in1, net_e1, if1)
 
     def run(self):
         # skip regulation if there are too few history samples
@@ -595,8 +637,7 @@ if __name__ == "__main__":
     Q_obv = Queue.Queue()
 
     nfv_regulator = NFVRegulator('nfv_regulator')
-    nfv_regulator.calcuCPUthresh()
-    nfv_regulator.calcuMEMthresh()
+    nfv_regulator.startRegulate()
 
     # NFVMonitor is used to collect VNF instance performance featuress 
 #    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
