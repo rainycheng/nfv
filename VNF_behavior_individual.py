@@ -194,10 +194,11 @@ class NFVCluster(threading.Thread):
         
         # the first 7 features represent CPU/MEM/BLOCK features
         # use these 7 features to train the cluster1 model
-        self.est1.fit(train_features[:,0:7])
+##        self.est1.fit(train_features[:,0:7])
+        self.est1.fit(train_features)
         # the last 16 features represent NETWORK features
         # use these 16 features to train the cluster2 model
-        self.est2.fit(train_features[:,7:23])
+##        self.est2.fit(train_features[:,7:23])
 
         # labels.txt is used to record the labels of observations
         labels = open(f_out_label,'w')
@@ -208,15 +209,16 @@ class NFVCluster(threading.Thread):
         i=0
         for lab in self.est1.labels_:
             #using str() to write readable formats into the file
-            lab_str = str(lab) + ' ' + str(self.est2.labels_[i]) +'\n'
+##            lab_str = str(lab) + ' ' + str(self.est2.labels_[i]) +'\n'
+            lab_str = str(lab) + '\n'
             labels.write(lab_str)
             i = i+1
         
         # write the cluster centroids into the centers.txt file
         for cent in self.est1.cluster_centers_:
             cluster_centers.write(str(cent)+"\n")
-        for cent in self.est2.cluster_centers_:
-            cluster_centers.write(str(cent)+"\n")
+##        for cent in self.est2.cluster_centers_:
+##            cluster_centers.write(str(cent)+"\n")
         
         #close the opened files
         labels.close()
@@ -254,9 +256,11 @@ class NFVCluster(threading.Thread):
         # predict the cluster label of each sample
         for off_vec in predict_features:
             # the input off_vec has only one sample, use reshape(1,-1) to adjust dimension 
-            off_lab1 = self.est1.predict(np.array(off_vec)[0:7].reshape(1,-1))
-            off_lab2 = self.est2.predict(np.array(off_vec)[7:23].reshape(1,-1))
-            file_label.write(str(off_lab1[0])+' '+str(off_lab2[0])+'\n')            
+##            off_lab1 = self.est1.predict(np.array(off_vec)[0:7].reshape(1,-1))
+##            off_lab2 = self.est2.predict(np.array(off_vec)[7:23].reshape(1,-1))
+##            file_label.write(str(off_lab1[0])+' '+str(off_lab2[0])+'\n')            
+            off_lab1 = self.est1.predict(np.array(off_vec).reshape(1,-1))
+            file_label.write(str(off_lab1[0])+'\n')
 
     # run() is used in the multi-thread mode of online clustering for every second
     def run(self):
@@ -318,8 +322,8 @@ class NFVHMM(threading.Thread):
         obvX = np.loadtxt(f_input_labels)
         #the obvX has only one feature, using X.reshape(-1,1) to format dimension
         #hmm.fit is used to train the GaussianHMM model
-#        self.hmm.fit(obvX.reshape(-1,1))
-        self.hmm.fit(obvX)
+        self.hmm.fit(obvX.reshape(-1,1))
+##        self.hmm.fit(obvX)
 
     # use the trained HMM model to predict online VNF behavior log likelihood
     def predictHMM(self):
@@ -348,9 +352,10 @@ class NFVHMM(threading.Thread):
             # the number of labels in the obv_window is fixed to the size of global_window
             if( len(obv_window) > global_window):
                 del obv_window[0]
-#            print (np.array(obv_window).reshape(-1,2))  
+              
             # use the label sequence in the obv_window to calculate the log likelihood  
-            obv_score = self.hmm.score(np.array(obv_window).reshape(-1,2))
+##            obv_score = self.hmm.score(np.array(obv_window).reshape(-1,2))
+            obv_score = self.hmm.score(np.array(obv_window).reshape(-1,1))
             # store the log likelihood into the f_output_predict file.
             predict_result.write(str(obv_score)+'\n')
 
@@ -459,15 +464,14 @@ if __name__ == "__main__":
     global_components = 30
     global_window = 20
     global_threshold = -110
-
-
+   
     global_cluster1 = int(sys.argv[1])
     global_cluster2 = int(sys.argv[1])
     global_components = int(sys.argv[2])
     global_window = int(sys.argv[3])
-   
-    pre_name = 'beh_cluster2/' + sys.argv[6] + '/' + str(global_cluster1) +'_'+str(global_components)+'_'+str(global_window) + '_'
 
+    pre_name = 'beh_indiv/' + sys.argv[6] + '/' + str(global_cluster1) +'_'+str(global_components)+'_'+str(global_window) + '_'
+ 
     # Input the instance ID to Monitor VNF instance
     if len(sys.argv) == 1:
        print ("please give the domain id parameter!\n")
@@ -482,27 +486,41 @@ if __name__ == "__main__":
 #    time.sleep(600)
 
     # NFVCluster is used to cluster performance features samples into several clusters 
-    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
+#    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
     # trainCluster function accept three parameters
     # 'train_features.txt' is the input file containing the collected VNF performance features
     # 'out_stand.txt' is the output file containing the preprocessed standardization features of 'train_features.txt'
     # 'train_label.txt' is the output file containing the clustered labels of each feature samples
-#    nfv_cluster.trainCluster('train_features.txt','out_stand.txt','train_label.txt')
-    nfv_cluster.trainCluster(sys.argv[4],'out_stand.txt','train_label.txt')
+#    nfv_cluster.trainCluster('train_features.txt','out_stand.txt','train_label1.txt')
     # 'predict_features.txt' is the input file containing the collected VNF performance features being predicted
     # 'out_stand1.txt' is the output file containing the preprocessed standardization features of 'predict_features.txt'
     # 'predict_label.txt' is the output file containing the predicted cluster labels of each feature samples
-    nfv_cluster.offlinePredict(sys.argv[5],'out_stand1.txt','predict_label.txt')
+#    nfv_cluster.offlinePredict('predict_features.txt','out_stand1.txt','predict_label1.txt')
 #    nfv_cluster.start()
 #    time.sleep(10)
 #
+    f_train = np.loadtxt(sys.argv[4])
+    for i in range(0,23):
+        f_fea = open('beh_indiv/train_'+str(i)+'.txt','w')
+        for j in f_train[:, i]:
+            f_fea.write(str(j)+'\n')
+        f_fea.close() 
 
+    f_test = np.loadtxt(sys.argv[5])
+    for i in range(0,23):
+        f_fea = open('beh_indiv/test_'+str(i)+'.txt','w')
+        for j in f_train[:, i]:
+            f_fea.write(str(j)+'\n')
+        f_fea.close()
 
+    hmm_models = [ ]
     # NFVHMM is used to predict abnormal behavior of VNF instances
-    nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
-    nfv_hmm.trainHMM('train_label.txt')
-    nfv_hmm.offlinePredict('train_label.txt', pre_name + 'train_result.txt')
-    nfv_hmm.offlinePredict('predict_label.txt', pre_name + 'test_result.txt')
+    for i in range(0,23):
+        nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
+        nfv_hmm.trainHMM('beh_indiv/train_' + str(i)+'.txt')
+        nfv_hmm.offlinePredict('beh_indiv/train_'+ str(i) + '.txt', pre_name + 'train_result_' + str(i)  + '.txt')
+        nfv_hmm.offlinePredict('beh_indiv/test_'+ str(i) + '.txt', pre_name + 'test_result_' + str(i)  + '.txt')
+
 #    nfv_hmm.start()
 #    time.sleep(50)
     

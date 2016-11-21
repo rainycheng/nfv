@@ -464,7 +464,13 @@ if __name__ == "__main__":
     global_components = 30
     global_window = 20
     global_threshold = -110
-    
+
+    global_cluster1 = int(sys.argv[1])
+    global_cluster2 = int(sys.argv[1])
+    global_components = int(sys.argv[2])
+    global_window = int(sys.argv[3])
+
+    pre_name = 'beh_cluster1/' + sys.argv[6] + '/' + str(global_cluster1) +'_'+str(global_components)+'_'+str(global_window) + '_' 
     # Input the instance ID to Monitor VNF instance
     if len(sys.argv) == 1:
        print ("please give the domain id parameter!\n")
@@ -484,11 +490,13 @@ if __name__ == "__main__":
     # 'train_features.txt' is the input file containing the collected VNF performance features
     # 'out_stand.txt' is the output file containing the preprocessed standardization features of 'train_features.txt'
     # 'train_label.txt' is the output file containing the clustered labels of each feature samples
-    nfv_cluster.trainCluster('train_features.txt','out_stand.txt','train_label1.txt')
+#    nfv_cluster.trainCluster('train_features.txt','out_stand.txt','train_label1.txt')
+    nfv_cluster.trainCluster(sys.argv[4],'out_stand.txt','train_label1.txt')
     # 'predict_features.txt' is the input file containing the collected VNF performance features being predicted
     # 'out_stand1.txt' is the output file containing the preprocessed standardization features of 'predict_features.txt'
     # 'predict_label.txt' is the output file containing the predicted cluster labels of each feature samples
-    nfv_cluster.offlinePredict('predict_features.txt','out_stand1.txt','predict_label1.txt')
+#    nfv_cluster.offlinePredict('predict_features.txt','out_stand1.txt','predict_label1.txt')
+    nfv_cluster.offlinePredict(sys.argv[5],'out_stand1.txt','predict_label1.txt')
 #    nfv_cluster.start()
 #    time.sleep(10)
 #

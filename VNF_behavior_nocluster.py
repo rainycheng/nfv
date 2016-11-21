@@ -320,6 +320,7 @@ class NFVHMM(threading.Thread):
         #hmm.fit is used to train the GaussianHMM model
 #        self.hmm.fit(obvX.reshape(-1,1))
         self.hmm.fit(obvX)
+        print ('OK')
 
     # use the trained HMM model to predict online VNF behavior log likelihood
     def predictHMM(self):
@@ -348,9 +349,9 @@ class NFVHMM(threading.Thread):
             # the number of labels in the obv_window is fixed to the size of global_window
             if( len(obv_window) > global_window):
                 del obv_window[0]
-#            print (np.array(obv_window).reshape(-1,2))  
+            print (np.array(obv_window).reshape(-1,23))  
             # use the label sequence in the obv_window to calculate the log likelihood  
-            obv_score = self.hmm.score(np.array(obv_window).reshape(-1,2))
+            obv_score = self.hmm.score(np.array(obv_window).reshape(-1,23))
             # store the log likelihood into the f_output_predict file.
             predict_result.write(str(obv_score)+'\n')
 
@@ -456,18 +457,10 @@ if __name__ == "__main__":
     #the current tuned parameters, still needs further tuning work 
     global_cluster1 = 20
     global_cluster2 = 20
-    global_components = 30
+    global_components = 20
     global_window = 20
     global_threshold = -110
-
-
-    global_cluster1 = int(sys.argv[1])
-    global_cluster2 = int(sys.argv[1])
-    global_components = int(sys.argv[2])
-    global_window = int(sys.argv[3])
-   
-    pre_name = 'beh_cluster2/' + sys.argv[6] + '/' + str(global_cluster1) +'_'+str(global_components)+'_'+str(global_window) + '_'
-
+    
     # Input the instance ID to Monitor VNF instance
     if len(sys.argv) == 1:
        print ("please give the domain id parameter!\n")
@@ -482,27 +475,25 @@ if __name__ == "__main__":
 #    time.sleep(600)
 
     # NFVCluster is used to cluster performance features samples into several clusters 
-    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
+#    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
     # trainCluster function accept three parameters
     # 'train_features.txt' is the input file containing the collected VNF performance features
     # 'out_stand.txt' is the output file containing the preprocessed standardization features of 'train_features.txt'
     # 'train_label.txt' is the output file containing the clustered labels of each feature samples
 #    nfv_cluster.trainCluster('train_features.txt','out_stand.txt','train_label.txt')
-    nfv_cluster.trainCluster(sys.argv[4],'out_stand.txt','train_label.txt')
     # 'predict_features.txt' is the input file containing the collected VNF performance features being predicted
     # 'out_stand1.txt' is the output file containing the preprocessed standardization features of 'predict_features.txt'
     # 'predict_label.txt' is the output file containing the predicted cluster labels of each feature samples
-    nfv_cluster.offlinePredict(sys.argv[5],'out_stand1.txt','predict_label.txt')
+#    nfv_cluster.offlinePredict('predict_features.txt','out_stand1.txt','predict_label.txt')
 #    nfv_cluster.start()
 #    time.sleep(10)
 #
 
-
     # NFVHMM is used to predict abnormal behavior of VNF instances
     nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
-    nfv_hmm.trainHMM('train_label.txt')
-    nfv_hmm.offlinePredict('train_label.txt', pre_name + 'train_result.txt')
-    nfv_hmm.offlinePredict('predict_label.txt', pre_name + 'test_result.txt')
+    nfv_hmm.trainHMM('train_features.txt')
+    nfv_hmm.offlinePredict('train_features.txt','hmm_direct_man6.txt')
+    nfv_hmm.offlinePredict('predict_features.txt','hmm_direct_man7.txt')
 #    nfv_hmm.start()
 #    time.sleep(50)
     
