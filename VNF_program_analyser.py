@@ -390,12 +390,14 @@ if __name__ == "__main__":
     # build VNF malware database
     mal_db = MalwareDB()
     mal_db.buildVNFDB()
-    
+    if len(sys.argv) == 1:
+       print "Please give the testing VNF binary!\n"    
     # approximate match to analyse tested VNF program
     am =  ApproximateMatch()
     # use the tested VNF ELF binary name as input
 #    am.calcuProgramSim('../amoco/tests/samples/x86/cpflow.elf')
-    am.calcuProgramSim('mymalware')
+#    am.calcuProgramSim('mymalware')
+    am.calcuProgramSim(sys.argv[1])
 
 
      

@@ -15,13 +15,13 @@ from hmmlearn import hmm
 
 class NFVMonitor(threading.Thread):
     """performance monitoring class"""
-    def __init__(self,t_name,domID,vec_queue):
+    def __init__(self,t_name,domID,vec_queue,f_features):
         self.queue = vec_queue
         #self._running state controls the termination of this thread
         self._running = True
         
         #open features.txt file, this file is used to record VNF performance monitoring features
-        self.features = open('/home/stack/features1.txt','a')
+        self.features = open(f_features,'a')
         
         #connect to libvirt
         conn = libvirt.open('qemu:///system')
@@ -461,17 +461,17 @@ if __name__ == "__main__":
     global_threshold = -110
     
     # Input the instance ID to Monitor VNF instance
-    if len(sys.argv) == 1:
-       print ("please give the domain id parameter!\n")
+    if len(sys.argv) != 3:
+       print ("please give the domain id parameter and output features file name!\n")
     # the shared queue q is used by NFVMonitor and NFVCluster, each item in the q is the performance vector
     Q_vec = Queue.Queue()
     # the shared queue qc is used by NFVCluster and NFVHMM, each item in the qc is the observation
     Q_obv = Queue.Queue()
 
     # NFVMonitor is used to collect VNF instance performance featuress 
-    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
+    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec, sys.argv[2])
     nfv_monitor.start()
-    time.sleep(600)
+    time.sleep(18000)
 
 #    # NFVCluster is used to cluster performance features samples into several clusters 
 #    nfv_cluster = NFVCluster('nfv_cluster', Q_vec, Q_obv)
