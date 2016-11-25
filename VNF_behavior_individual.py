@@ -322,7 +322,11 @@ class NFVHMM(threading.Thread):
         obvX = np.loadtxt(f_input_labels)
         #the obvX has only one feature, using X.reshape(-1,1) to format dimension
         #hmm.fit is used to train the GaussianHMM model
-        self.hmm.fit(obvX.reshape(-1,1))
+        try:
+            self.hmm.fit(obvX.reshape(-1,1))
+            return 1
+        except:
+            return 0
 ##        self.hmm.fit(obvX)
 
     # use the trained HMM model to predict online VNF behavior log likelihood
@@ -355,9 +359,12 @@ class NFVHMM(threading.Thread):
               
             # use the label sequence in the obv_window to calculate the log likelihood  
 ##            obv_score = self.hmm.score(np.array(obv_window).reshape(-1,2))
-            obv_score = self.hmm.score(np.array(obv_window).reshape(-1,1))
-            # store the log likelihood into the f_output_predict file.
-            predict_result.write(str(obv_score)+'\n')
+            try:
+                obv_score = self.hmm.score(np.array(obv_window).reshape(-1,1))
+                # store the log likelihood into the f_output_predict file.
+                predict_result.write(str(obv_score)+'\n')
+            except:
+                continue
 
         print ('global_window:' + str(global_window)) 
         predict_result.close()
@@ -509,7 +516,7 @@ if __name__ == "__main__":
     f_test = np.loadtxt(sys.argv[5])
     for i in range(0,23):
         f_fea = open('beh_indiv/test_'+str(i)+'.txt','w')
-        for j in f_train[:, i]:
+        for j in f_test[:, i]:
             f_fea.write(str(j)+'\n')
         f_fea.close()
 
@@ -517,9 +524,10 @@ if __name__ == "__main__":
     # NFVHMM is used to predict abnormal behavior of VNF instances
     for i in range(0,23):
         nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
-        nfv_hmm.trainHMM('beh_indiv/train_' + str(i)+'.txt')
-        nfv_hmm.offlinePredict('beh_indiv/train_'+ str(i) + '.txt', pre_name + 'train_result_' + str(i)  + '.txt')
-        nfv_hmm.offlinePredict('beh_indiv/test_'+ str(i) + '.txt', pre_name + 'test_result_' + str(i)  + '.txt')
+        ret = nfv_hmm.trainHMM('beh_indiv/train_' + str(i)+'.txt')
+        if ret == 1:
+           nfv_hmm.offlinePredict('beh_indiv/train_'+ str(i) + '.txt', pre_name + 'train_result_' + str(i)  + '.txt')
+           nfv_hmm.offlinePredict('beh_indiv/test_'+ str(i) + '.txt', pre_name + 'test_result_' + str(i)  + '.txt')
 
 #    nfv_hmm.start()
 #    time.sleep(50)

@@ -466,7 +466,7 @@ if __name__ == "__main__":
     global_components = int(sys.argv[2])
     global_window = int(sys.argv[3])
    
-    pre_name = 'beh_cluster2/' + sys.argv[6] + '/' + str(global_cluster1) +'_'+str(global_components)+'_'+str(global_window) + '_'
+    pre_name = 'beh_new_reg/' + sys.argv[6] + '/' + str(global_cluster1) +'_'+str(global_components)+'_'+str(global_window) + '_'
 
     # Input the instance ID to Monitor VNF instance
     if len(sys.argv) == 1:

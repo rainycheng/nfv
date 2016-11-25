@@ -442,11 +442,12 @@ class NFVThrottle(threading.Thread):
 
 # NFVRegulator regulates NFV resources usage when the HMM model reports abnormal VNF behaviors
 class NFVRegulator(threading.Thread):
-    def __init__(self, t_name):
+    def __init__(self, t_name, f_input):
         self._running = True
         threading.Thread.__init__(self, name=t_name)
         # features.txt is the performance monitoring events file
-        self.features = np.loadtxt('features.txt')
+        self.f_input = f_input
+        self.features = np.loadtxt(f_input)
         # shape[0] number of rows, shape[1] number of columns
         self.length = self.features.shape[0]
         # create NFVThrottle instance, 'instance-00000008' is the NFV VM name (virsh list)
@@ -571,18 +572,24 @@ class NFVRegulator(threading.Thread):
             throttle1_in = self.throttlePercent(da1_efilter)
         dev0 = 'tapa3502e00-82'
         dev1 = 'tapc56fd03b-31'
-        # maximum bandwidth 100Mb, default Kbps
-        quota0_in = 102400 * (1-throttle0_in)  
-        quota0_e = 102400 * (1-throttle0_e)  
-        quota1_in = 102400 * (1-throttle1_in)  
-        quota1_e = 102400 * (1-throttle1_e)
+        # maximum bandwidth 10Gb, default Kbps
+        quota0_in = 10240000 * (1-throttle0_in)  
+        quota0_e = 10240000 * (1-throttle0_e)  
+        quota1_in = 10240000 * (1-throttle1_in)  
+        quota1_e = 10240000 * (1-throttle1_e)
         
         return int(quota0_in), int(quota0_e), int(quota1_in), int(quota1_e)  
 
 
     def startRegulate(self):
         # skip regulation if there are too few history samples
-        if (self.length > 100):
+        while self._running:
+            time.sleep(2)
+            # features.txt is the performance monitoring events file
+            self.features = np.loadtxt(self.f_input)
+            # shape[0] number of rows, shape[1] number of columns
+            self.length = self.features.shape[0]
+
             cpu_thresh = self.calcuCPUthresh()
             mem_thresh = self.calcuMEMthresh()
             disk_rthresh,disk_wthresh = self.calcuDISKthresh()
@@ -594,11 +601,13 @@ class NFVRegulator(threading.Thread):
             dev1 = 'tapc56fd03b-31'
             if1 = 'qvoc56fd03b-31'
             self.execute.throttleCPU(cpu_thresh)
-            self.execute.throttleMEM(mem_thresh)
-            self.execute.throttleDISK(disk_rthresh, 'read_bps')
-            self.execute.throttleDISK(disk_wthresh, 'write_bps')        
+            #self.execute.throttleMEM(mem_thresh)
+            #self.execute.throttleDISK(disk_rthresh, 'read_bps')
+            #self.execute.throttleDISK(disk_wthresh, 'write_bps')        
             self.execute.throttleNET(net_in0, net_e0, if0)
             self.execute.throttleNET(net_in1, net_e1, if1)
+            print (cpu_thresh, mem_thresh, disk_rthresh, disk_wthresh, net_in0, net_e0, net_in1, net_e1)
+            #print (cpu_thresh)
 
     def run(self):
         # skip regulation if there are too few history samples
@@ -636,9 +645,14 @@ if __name__ == "__main__":
     # the shared queue qc is used by NFVCluster and NFVHMM, each item in the qc is the observation
     Q_obv = Queue.Queue()
 
-    nfv_regulator = NFVRegulator('nfv_regulator')
+    nfv_regulator = NFVRegulator('nfv_regulator','new_reg_c2.txt')
     nfv_regulator.startRegulate()
 
+    time.sleep(600)
+
+    nfv_regulator.terminate()
+
+    nfv_regulator.execute.throttleCPU(-1)
     # NFVMonitor is used to collect VNF instance performance featuress 
 #    nfv_monitor = NFVMonitor('nfv_monitor', int(sys.argv[1]), Q_vec)
 #    nfv_monitor.start()

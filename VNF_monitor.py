@@ -73,7 +73,7 @@ class NFVMonitor(threading.Thread):
             net_prev.append(self.getNETstats(iface.get('dev')))
         
         while self._running:
-            time.sleep(5)
+            time.sleep(1)
             #collect CPU,memory,block,network performance stats 
             cpu_stats = self.getCPUstats()
             mem_stats = self.getMEMstats()
@@ -85,8 +85,8 @@ class NFVMonitor(threading.Thread):
             VEC = VEC + ' ' + str(mem_stats['minor_fault'] - mem_prev['minor_fault'])
             VEC = VEC + ' ' + str(mem_stats['rss'] - mem_prev['rss'])
             #CPU features
+            VEC = VEC + ' ' + str(cpu_stats[0]['cpu_time']-cpu_prev[0]['cpu_time'])
             VEC = VEC + ' ' + str(cpu_stats[0]['system_time']-cpu_prev[0]['system_time'])
-            VEC = VEC + ' ' + str(cpu_stats[0]['user_time']-cpu_prev[0]['user_time'])
             #disk features
 #            for i in range(0,4):
 #                VEC = VEC + ' ' + str(disk_stats[i]) + ' ' + str(disk_stats[i] - disk_prev[i])
@@ -112,7 +112,7 @@ class NFVMonitor(threading.Thread):
             VEC = VEC + '\n'
             #NFVmonitor put monitoring events into a shared queue
 ###            self.queue.put(VEC)
-#            print (VEC)        
+            print (VEC)        
             #write stats_vector into features.txt file, do not foget to flush into disk
             self.features.write(VEC)
             self.features.flush()

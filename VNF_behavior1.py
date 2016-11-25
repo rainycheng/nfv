@@ -504,8 +504,8 @@ if __name__ == "__main__":
     # NFVHMM is used to predict abnormal behavior of VNF instances
     nfv_hmm = NFVHMM('nfv_hmm', Q_obv)
     nfv_hmm.trainHMM('train_label1.txt')
-    nfv_hmm.offlinePredict('train_label1.txt','hmm_result_train1.txt')
-    nfv_hmm.offlinePredict('predict_label1.txt','hmm_result_predict1.txt')
+    nfv_hmm.offlinePredict('train_label1.txt', pre_name + 'train_result.txt')
+    nfv_hmm.offlinePredict('predict_label1.txt', pre_name + 'test_result.txt')
 #    nfv_hmm.start()
 #    time.sleep(50)
     
